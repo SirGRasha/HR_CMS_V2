@@ -75,7 +75,7 @@ class MeAPIViewTest(APITestCase):
 
         self.assertEqual(
             response.status_code,
-            status.HTTP_403_FORBIDDEN,
+            status.HTTP_401_UNAUTHORIZED,
         )
 
     def test_authenticated_user_can_access_me(self):
@@ -146,4 +146,131 @@ class MeAPIViewTest(APITestCase):
         self.assertEqual(
             response.data["is_superuser"],
             False,
+        )
+class JWTAuthenticationTest(APITestCase):
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="reza",
+            password="StrongPassword123",
+            first_name="Reza",
+            last_name="Test",
+            email="reza@example.com",
+        )
+
+        self.token_url = "/api/accounts/token/"
+        self.refresh_url = "/api/accounts/token/refresh/"
+        self.me_url = "/api/accounts/me/"
+
+    def test_login_returns_access_and_refresh_tokens(self):
+        response = self.client.post(
+            self.token_url,
+            {
+                "username": "reza",
+                "password": "StrongPassword123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertIn(
+            "access",
+            response.data,
+        )
+
+        self.assertIn(
+            "refresh",
+            response.data,
+        )
+
+    def test_login_with_wrong_password_fails(self):
+        response = self.client.post(
+            self.token_url,
+            {
+                "username": "reza",
+                "password": "WrongPassword123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_login_with_unknown_user_fails(self):
+        response = self.client.post(
+            self.token_url,
+            {
+                "username": "unknown_user",
+                "password": "StrongPassword123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_access_token_can_authenticate_me(self):
+        response = self.client.post(
+            self.token_url,
+            {
+                "username": "reza",
+                "password": "StrongPassword123",
+            },
+            format="json",
+        )
+
+        access_token = response.data["access"]
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {access_token}"
+        )
+
+        response = self.client.get(self.me_url)
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["username"],
+            "reza",
+        )
+
+    def test_refresh_token_returns_new_access_token(self):
+        response = self.client.post(
+            self.token_url,
+            {
+                "username": "reza",
+                "password": "StrongPassword123",
+            },
+            format="json",
+        )
+
+        refresh_token = response.data["refresh"]
+
+        response = self.client.post(
+            self.refresh_url,
+            {
+                "refresh": refresh_token,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertIn(
+            "access",
+            response.data,
         )
