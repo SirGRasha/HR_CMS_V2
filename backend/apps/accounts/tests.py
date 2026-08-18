@@ -527,6 +527,91 @@ class UserPasswordAPITest(APITestCase):
             f"/api/accounts/users/{self.user.id}/password/"
         )
 
+    def test_staff_cannot_change_another_staff_password(self):
+        other_staff = User.objects.create_user(
+            username="other_staff_password",
+            password="OtherStaffPassword123",
+            is_staff=True,
+        )
+
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        url = (
+            f"/api/accounts/users/"
+            f"{other_staff.id}/password/"
+        )
+
+        response = self.client.post(
+            url,
+            {
+                "new_password": "HackedPassword123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        other_staff.refresh_from_db()
+
+        self.assertTrue(
+            other_staff.check_password(
+                "OtherStaffPassword123"
+            )
+        )
+
+        self.assertFalse(
+            other_staff.check_password(
+                "HackedPassword123"
+            )
+        )
+
+    def test_staff_cannot_change_superuser_password(self):
+        superuser = User.objects.create_superuser(
+            username="password_admin",
+            password="AdminPassword123",
+        )
+
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        url = (
+            f"/api/accounts/users/"
+            f"{superuser.id}/password/"
+        )
+
+        response = self.client.post(
+            url,
+            {
+                "new_password": "HackedPassword123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        superuser.refresh_from_db()
+
+        self.assertTrue(
+            superuser.check_password(
+                "AdminPassword123"
+            )
+        )
+
+        self.assertFalse(
+            superuser.check_password(
+                "HackedPassword123"
+            )
+        )
+
     def test_user_can_change_own_password(self):
         self.client.force_authenticate(user=self.user)
 
@@ -608,6 +693,47 @@ class UserPasswordAPITest(APITestCase):
         self.assertNotIn(
             "password",
             response.data,
+        )
+
+    def test_superuser_can_change_staff_password(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        # ابتدا با یک superuser واقعی احراز هویت می‌کنیم.
+        superuser = User.objects.create_superuser(
+            username="password_superuser",
+            password="AdminPassword123",
+        )
+
+        self.client.force_authenticate(
+            user=superuser
+        )
+
+        url = (
+            f"/api/accounts/users/"
+            f"{self.staff_user.id}/password/"
+        )
+
+        response = self.client.post(
+            url,
+            {
+                "new_password": "ChangedByAdmin123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.staff_user.refresh_from_db()
+
+        self.assertTrue(
+            self.staff_user.check_password(
+                "ChangedByAdmin123"
+            )
         )
 
 class UserSecurityAPITest(APITestCase):
@@ -700,12 +826,12 @@ class UserSecurityAPITest(APITestCase):
 
         self.assertEqual(
             response.status_code,
-            status.HTTP_200_OK,
+            status.HTTP_403_FORBIDDEN,
         )
 
         self.superuser.refresh_from_db()
 
-        self.assertEqual(
+        self.assertNotEqual(
             self.superuser.first_name,
             "Hacked",
         )
@@ -842,4 +968,200 @@ class UserSecurityAPITest(APITestCase):
             User.objects.filter(
                 id=self.staff_user.id
             ).exists()
+        )
+    def test_staff_cannot_modify_another_staff(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.patch(
+            f"{self.users_url}{self.other_staff.id}/",
+            {
+                "first_name": "Hacked",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        self.other_staff.refresh_from_db()
+
+        self.assertNotEqual(
+            self.other_staff.first_name,
+            "Hacked",
+        )
+
+    def test_superuser_can_modify_staff_user(self):
+        self.client.force_authenticate(
+            user=self.superuser
+        )
+
+        response = self.client.patch(
+            f"{self.users_url}{self.staff_user.id}/",
+            {
+                "first_name": "UpdatedByAdmin",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.staff_user.refresh_from_db()
+
+        self.assertEqual(
+            self.staff_user.first_name,
+            "UpdatedByAdmin",
+        )
+
+    def test_superuser_cannot_demote_self(self):
+        self.client.force_authenticate(
+            user=self.superuser
+        )
+
+        response = self.client.patch(
+            f"{self.users_url}{self.superuser.id}/",
+            {
+                "is_superuser": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.superuser.refresh_from_db()
+
+        self.assertTrue(
+            self.superuser.is_superuser
+        )
+
+    def test_superuser_cannot_remove_own_staff_status(self):
+        self.client.force_authenticate(
+            user=self.superuser
+        )
+
+        response = self.client.patch(
+            f"{self.users_url}{self.superuser.id}/",
+            {
+                "is_staff": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.superuser.refresh_from_db()
+
+        self.assertTrue(
+            self.superuser.is_staff
+        )
+
+    def test_superuser_cannot_deactivate_self(self):
+        self.client.force_authenticate(
+            user=self.superuser
+        )
+
+        response = self.client.patch(
+            f"{self.users_url}{self.superuser.id}/",
+            {
+                "is_active": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.superuser.refresh_from_db()
+
+        self.assertTrue(
+            self.superuser.is_active
+        )
+
+    def test_superuser_cannot_delete_self(self):
+        self.client.force_authenticate(
+            user=self.superuser
+        )
+
+        response = self.client.delete(
+            f"{self.users_url}{self.superuser.id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        self.assertTrue(
+            User.objects.filter(
+                id=self.superuser.id
+            ).exists()
+        )
+
+    def test_superuser_can_manage_other_superuser(self):
+        other_superuser = User.objects.create_superuser(
+            username="other_admin",
+            password="StrongPassword123",
+        )
+
+        self.client.force_authenticate(
+            user=self.superuser
+        )
+
+        response = self.client.patch(
+            f"{self.users_url}{other_superuser.id}/",
+            {
+                "first_name": "UpdatedAdmin",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        other_superuser.refresh_from_db()
+
+        self.assertEqual(
+            other_superuser.first_name,
+            "UpdatedAdmin",
+        )
+
+    def test_staff_can_modify_normal_user(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.patch(
+            f"{self.users_url}{self.normal_user.id}/",
+            {
+                "first_name": "UpdatedByStaff",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.normal_user.refresh_from_db()
+
+        self.assertEqual(
+            self.normal_user.first_name,
+            "UpdatedByStaff",
         )

@@ -180,6 +180,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         model = Employee
         fields = [
             "id",
+            "user",
             "personnel_code",
             "first_name",
             "last_name",

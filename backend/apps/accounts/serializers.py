@@ -116,7 +116,11 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         request = self.context.get("request")
 
-        if request and not request.user.is_superuser:
+        if not request:
+            return attrs
+
+        # Only superusers can change privileged flags.
+        if not request.user.is_superuser:
             if "is_staff" in attrs:
                 raise serializers.ValidationError(
                     {
@@ -133,6 +137,48 @@ class UserUpdateSerializer(serializers.ModelSerializer):
                         "is_superuser": (
                             "Only superusers can change "
                             "superuser status."
+                        )
+                    }
+                )
+
+        # A superuser must not be able to disable or demote
+        # their own account.
+        if self.instance and request.user == self.instance:
+            if (
+                "is_superuser" in attrs
+                and attrs["is_superuser"] is False
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "is_superuser": (
+                            "A superuser cannot remove "
+                            "their own superuser status."
+                        )
+                    }
+                )
+
+            if (
+                "is_staff" in attrs
+                and attrs["is_staff"] is False
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "is_staff": (
+                            "A superuser cannot remove "
+                            "their own staff status."
+                        )
+                    }
+                )
+
+            if (
+                "is_active" in attrs
+                and attrs["is_active"] is False
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "is_active": (
+                            "A superuser cannot deactivate "
+                            "their own account."
                         )
                     }
                 )
