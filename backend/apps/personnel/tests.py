@@ -25,6 +25,9 @@ from .serializers import (
     EmployeeSerializer,
     validate_iranian_national_id,
 )
+from apps.accounts.models import User
+from apps.organization.models import OrganizationUnit, Position
+from apps.personnel.models import Employee
 
 
 class NationalIDValidationTest(TestCase):
@@ -57,6 +60,365 @@ class EmployeeSerializerTest(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn("national_id", serializer.errors)
 
+class EmployeeAPITest(APITestCase):
+    def setUp(self):
+
+        self.user = User.objects.create_user(
+            username="testuser",
+            password="StrongPassword123",
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        self.organization_unit = OrganizationUnit.objects.create(
+            code="TEST-UNIT-001",
+            name="واحد تست",
+            unit_type=OrganizationUnit.UnitType.UNIT,
+        )
+
+        self.second_organization_unit = OrganizationUnit.objects.create(
+            code="TEST-UNIT-002",
+            name="واحد تست دوم",
+            unit_type=OrganizationUnit.UnitType.UNIT,
+        )
+
+        self.position = Position.objects.create(
+            code="TEST-POS-001",
+            title="سمت تست",
+            organization_unit=self.organization_unit,
+        )
+
+        self.second_position = Position.objects.create(
+            code="TEST-POS-002",
+            title="سمت تست دوم",
+            organization_unit=self.second_organization_unit,
+        )
+
+        self.employee = Employee.objects.create(
+            personnel_code="EMP-API-001",
+            first_name="تست",
+            last_name="کارمند",
+            gender="male",
+            employee_group="administrative",
+            department="فناوری اطلاعات",
+            job_title="کارشناس IT",
+            national_id="0012345679",
+            marital_status="single",
+            position=self.position,
+        )
+
+        self.second_employee = Employee.objects.create(
+            personnel_code="EMP-API-002",
+            first_name="کارمند",
+            last_name="دوم",
+            gender="male",
+            employee_group="operational",
+            department="مالی",
+            job_title="کارشناس مالی",
+            national_id="0023456788",
+            marital_status="married",
+            position=self.second_position,
+        )
+
+        self.url = "/api/personnel/employees/"
+
+    def test_list_employees(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+
+        data = response.data
+        if isinstance(data, dict) and "results" in data:
+            data = data["results"]
+
+        self.assertEqual(len(data), 2)
+
+    def test_retrieve_employee(self):
+        response = self.client.get(
+            f"{self.url}{self.employee.id}/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["id"],
+            self.employee.id,
+        )
+        self.assertEqual(
+            response.data["personnel_code"],
+            "EMP-API-001",
+        )
+
+    def test_create_employee(self):
+        data = {
+            "personnel_code": "EMP-API-003",
+            "first_name": "کارمند جدید",
+            "last_name": "تست",
+            "gender": "male",
+            "employee_group": "administrative",
+            "department": "منابع انسانی",
+            "job_title": "کارشناس منابع انسانی",
+            "national_id": "0034567895",
+            "marital_status": "single",
+        }
+
+        response = self.client.post(
+            self.url,
+            data,
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            201,
+            response.data,
+        )
+
+        self.assertEqual(
+            response.data["personnel_code"],
+            "EMP-API-003",
+        )
+
+    def test_update_employee(self):
+        data = {
+            "personnel_code": "EMP-API-001",
+            "first_name": "نام جدید",
+            "last_name": "نام خانوادگی جدید",
+            "gender": "male",
+            "employee_group": "administrative",
+            "department": "فناوری اطلاعات",
+            "job_title": "مدیر IT",
+            "national_id": "0012345679",
+            "marital_status": "single",
+        }
+
+        response = self.client.put(
+            f"{self.url}{self.employee.id}/",
+            data,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        self.employee.refresh_from_db()
+
+        self.assertEqual(
+            self.employee.first_name,
+            "نام جدید",
+        )
+        self.assertEqual(
+            self.employee.job_title,
+            "مدیر IT",
+        )
+
+    def test_partial_update_employee(self):
+        response = self.client.patch(
+            f"{self.url}{self.employee.id}/",
+            {
+                "job_title": "کارشناس ارشد IT",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        self.employee.refresh_from_db()
+
+        self.assertEqual(
+            self.employee.job_title,
+            "کارشناس ارشد IT",
+        )
+
+    def test_delete_employee(self):
+        employee_id = self.employee.id
+
+        response = self.client.delete(
+            f"{self.url}{employee_id}/"
+        )
+
+        self.assertEqual(response.status_code, 204)
+
+        self.assertFalse(
+            Employee.objects.filter(
+                id=employee_id
+            ).exists()
+        )
+
+    def test_filter_by_employee_group(self):
+        response = self.client.get(
+            self.url,
+            {
+                "employee_group": "administrative",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        data = response.data
+        if isinstance(data, dict) and "results" in data:
+            data = data["results"]
+
+        self.assertEqual(len(data), 1)
+        self.assertEqual(
+            data[0]["personnel_code"],
+            "EMP-API-001",
+        )
+
+    def test_filter_by_is_active(self):
+        self.second_employee.is_active = False
+        self.second_employee.save()
+
+        response = self.client.get(
+            self.url,
+            {
+                "is_active": "true",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        data = response.data
+        if isinstance(data, dict) and "results" in data:
+            data = data["results"]
+
+        self.assertEqual(len(data), 1)
+        self.assertEqual(
+            data[0]["personnel_code"],
+            "EMP-API-001",
+        )
+
+    def test_filter_by_position(self):
+        response = self.client.get(
+            self.url,
+            {
+                "position": self.position.id,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        data = response.data
+        if isinstance(data, dict) and "results" in data:
+            data = data["results"]
+
+        self.assertEqual(len(data), 1)
+        self.assertEqual(
+            data[0]["id"],
+            self.employee.id,
+        )
+
+    def test_filter_by_organization_unit(self):
+        response = self.client.get(
+            self.url,
+            {
+                "organization_unit": self.organization_unit.id,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        data = response.data
+        if isinstance(data, dict) and "results" in data:
+            data = data["results"]
+
+        self.assertEqual(len(data), 1)
+        self.assertEqual(
+            data[0]["id"],
+            self.employee.id,
+        )
+
+    def test_combined_filters(self):
+        response = self.client.get(
+            self.url,
+            {
+                "employee_group": "administrative",
+                "is_active": "true",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        data = response.data
+        if isinstance(data, dict) and "results" in data:
+            data = data["results"]
+
+        self.assertEqual(len(data), 1)
+        self.assertEqual(
+            data[0]["personnel_code"],
+            "EMP-API-001",
+        )
+
+    def test_duplicate_personnel_code_returns_400(self):
+        data = {
+            "personnel_code": self.employee.personnel_code,
+            "first_name": "کارمند",
+            "last_name": "تکراری",
+            "gender": "male",
+            "employee_group": "administrative",
+            "department": "فناوری اطلاعات",
+            "job_title": "کارشناس",
+            "national_id": "0045678905",
+            "marital_status": "single",
+        }
+
+        response = self.client.post(
+            self.url,
+            data,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_invalid_national_id_returns_400(self):
+        data = {
+            "personnel_code": "EMP-API-004",
+            "first_name": "کارمند",
+            "last_name": "ملی",
+            "gender": "male",
+            "employee_group": "administrative",
+            "department": "فناوری اطلاعات",
+            "job_title": "کارشناس",
+            "national_id": "123",
+            "marital_status": "single",
+        }
+
+        response = self.client.post(
+            self.url,
+            data,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+        self.assertIn(
+            "national_id",
+            response.data,
+        )
+
+    def test_employee_detail_contains_expected_fields(self):
+        response = self.client.get(
+            f"{self.url}{self.employee.id}/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        expected_fields = [
+            "id",
+            "personnel_code",
+            "first_name",
+            "last_name",
+            "gender",
+            "employee_group",
+            "national_id",
+            "marital_status",
+        ]
+
+        for field in expected_fields:
+            self.assertIn(
+                field,
+                response.data,
+            )
 
 class EmployeeChildTest(TestCase):
 
@@ -1574,4 +1936,86 @@ class EmployeeDocumentAPITest(APITestCase):
         self.assertEqual(
             document.document_type,
             "national_id",
+        )
+
+class EmployeeUserRelationTest(TestCase):
+
+    def setUp(self):
+        self.employee = Employee.objects.create(
+            personnel_code="EMP-USER-001",
+            first_name="Reza",
+            last_name="Test",
+            gender="male",
+            employee_group="administrative",
+            national_id="0012345678",
+            marital_status="single",
+        )
+
+        self.user = User.objects.create_user(
+            username="employee_user",
+            password="StrongPassword123",
+            first_name="Reza",
+            last_name="Test",
+        )
+
+    def test_employee_can_exist_without_user(self):
+        self.assertIsNone(
+            self.employee.user
+        )
+
+    def test_employee_can_be_linked_to_user(self):
+        self.employee.user = self.user
+        self.employee.save()
+
+        self.employee.refresh_from_db()
+
+        self.assertEqual(
+            self.employee.user,
+            self.user,
+        )
+
+    def test_user_can_access_linked_employee(self):
+        self.employee.user = self.user
+        self.employee.save()
+
+        self.assertEqual(
+            self.user.employee,
+            self.employee,
+        )
+
+    def test_employee_user_relation_is_one_to_one(self):
+        self.employee.user = self.user
+        self.employee.save()
+
+        another_employee = Employee.objects.create(
+            personnel_code="EMP-USER-002",
+            first_name="Another",
+            last_name="Employee",
+            gender="male",
+            employee_group="administrative",
+            national_id="0012345686",
+            marital_status="single",
+        )
+
+        another_employee.user = self.user
+
+        with self.assertRaises(Exception):
+            another_employee.save()
+
+    def test_deleting_user_does_not_delete_employee(self):
+        self.employee.user = self.user
+        self.employee.save()
+
+        self.user.delete()
+
+        self.employee.refresh_from_db()
+
+        self.assertTrue(
+            Employee.objects.filter(
+                id=self.employee.id
+            ).exists()
+        )
+
+        self.assertIsNone(
+            self.employee.user
         )

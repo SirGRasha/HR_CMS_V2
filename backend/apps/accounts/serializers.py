@@ -1,3 +1,4 @@
+from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
 from apps.accounts.models import User
@@ -27,3 +28,124 @@ class UserSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+
+class UserCreateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(
+        write_only=True,
+        required=True,
+    )
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "username",
+            "password",
+            "first_name",
+            "last_name",
+            "email",
+            "is_active",
+            "is_staff",
+            "is_superuser",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate_password(self, value):
+        validate_password(value)
+        return value
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+
+        if request and not request.user.is_superuser:
+            if attrs.get("is_staff", False):
+                raise serializers.ValidationError(
+                    {
+                        "is_staff": (
+                            "Only superusers can create "
+                            "staff users."
+                        )
+                    }
+                )
+
+            if attrs.get("is_superuser", False):
+                raise serializers.ValidationError(
+                    {
+                        "is_superuser": (
+                            "Only superusers can create "
+                            "superusers."
+                        )
+                    }
+                )
+
+        return attrs
+
+    def create(self, validated_data):
+        password = validated_data.pop("password")
+
+        user = User(**validated_data)
+        user.set_password(password)
+        user.save()
+
+        return user
+
+
+class UserUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = [
+            "username",
+            "first_name",
+            "last_name",
+            "email",
+            "is_active",
+            "is_staff",
+            "is_superuser",
+        ]
+        read_only_fields = [
+            "username",
+        ]
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+
+        if request and not request.user.is_superuser:
+            if "is_staff" in attrs:
+                raise serializers.ValidationError(
+                    {
+                        "is_staff": (
+                            "Only superusers can change "
+                            "staff status."
+                        )
+                    }
+                )
+
+            if "is_superuser" in attrs:
+                raise serializers.ValidationError(
+                    {
+                        "is_superuser": (
+                            "Only superusers can change "
+                            "superuser status."
+                        )
+                    }
+                )
+
+        return attrs
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    new_password = serializers.CharField(
+        write_only=True,
+        required=True,
+    )
+
+    def validate_new_password(self, value):
+        validate_password(value)
+        return value

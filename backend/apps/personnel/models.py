@@ -1,9 +1,18 @@
 from django.core.validators import RegexValidator
 from django.db import models
+from django.conf import settings
 
 
 class Employee(models.Model):
 
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="employee",
+        verbose_name="حساب کاربری",
+    )
     class Gender(models.TextChoices):
         MALE = "male", "مرد"
         FEMALE = "female", "زن"

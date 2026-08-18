@@ -1,11 +1,24 @@
-from django.urls import path
-
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
 
-from apps.accounts.views import MeAPIView
+from apps.accounts.views import (
+    MeAPIView,
+    UserPasswordAPIView,
+    UserViewSet,
+)
+
+
+router = DefaultRouter()
+
+router.register(
+    "users",
+    UserViewSet,
+    basename="user",
+)
 
 
 urlpatterns = [
@@ -23,5 +36,14 @@ urlpatterns = [
         "me/",
         MeAPIView.as_view(),
         name="me",
+    ),
+    path(
+        "",
+        include(router.urls),
+    ),
+    path(
+        "users/<int:pk>/password/",
+        UserPasswordAPIView.as_view(),
+        name="user_password",
     ),
 ]
