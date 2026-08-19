@@ -15,7 +15,21 @@ from apps.accounts.serializers import (
     UserSerializer,
     UserUpdateSerializer,
 )
+from apps.audit.services import AuditService
+from apps.audit.utils import build_changes
 
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+)
+
+from apps.accounts.jwt_serializers import (
+    AuditTokenObtainPairSerializer,
+)
+
+class AuditTokenObtainPairView(
+    TokenObtainPairView
+):
+    serializer_class = AuditTokenObtainPairSerializer
 
 class MeAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -28,9 +42,21 @@ class MeAPIView(APIView):
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().order_by("id")
 
+    AUDIT_UPDATE_FIELDS = [
+        "first_name",
+        "last_name",
+        "email",
+        "is_active",
+        "is_staff",
+        "is_superuser",
+    ]
+
     def get_permissions(self):
         if self.action == "destroy":
-            permission_classes = [IsAuthenticated, IsSuperuser]
+            permission_classes = [
+                IsAuthenticated,
+                IsSuperuser,
+            ]
         else:
             permission_classes = [
                 IsAuthenticated,
@@ -46,10 +72,52 @@ class UserViewSet(viewsets.ModelViewSet):
         if self.action == "create":
             return UserCreateSerializer
 
-        if self.action in ["update", "partial_update"]:
+        if self.action in [
+            "update",
+            "partial_update",
+        ]:
             return UserUpdateSerializer
 
         return UserSerializer
+
+    def perform_create(self, serializer):
+        user = serializer.save()
+
+        AuditService.create(
+            actor=self.request.user,
+            instance=user,
+            request=self.request,
+        )
+
+    def perform_update(self, serializer):
+        old_user = User.objects.get(
+            pk=serializer.instance.pk
+        )
+
+        user = serializer.save()
+
+        changes = build_changes(
+            old_user,
+            user,
+            self.AUDIT_UPDATE_FIELDS,
+        )
+
+        if changes:
+            AuditService.update(
+                actor=self.request.user,
+                instance=user,
+                request=self.request,
+                changes=changes,
+            )
+
+    def perform_destroy(self, instance):
+        AuditService.delete(
+            actor=self.request.user,
+            instance=instance,
+            request=self.request,
+        )
+
+        instance.delete()
 
 
 class UserPasswordAPIView(APIView):
@@ -89,6 +157,12 @@ class UserPasswordAPIView(APIView):
             serializer.validated_data["new_password"]
         )
         user.save(update_fields=["password"])
+
+        AuditService.password_change(
+            actor=request.user,
+            instance=user,
+            request=request,
+        )
 
         return Response(
             {"detail": "Password changed successfully."},

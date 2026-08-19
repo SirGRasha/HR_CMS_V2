@@ -1,6 +1,7 @@
 from django.test import TestCase
 
 from apps.accounts.models import User
+from apps.audit.models import AuditLog
 
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -185,6 +186,68 @@ class JWTAuthenticationTest(APITestCase):
         self.assertIn(
             "refresh",
             response.data,
+        )
+
+    def test_successful_login_creates_audit_log(self):
+        from apps.audit.models import AuditLog
+
+        response = self.client.post(
+            self.token_url,
+            {
+                "username": "reza",
+                "password": "StrongPassword123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        audit = AuditLog.objects.filter(
+            actor=self.user,
+            action=AuditLog.Action.LOGIN,
+            object_id=str(self.user.id),
+        ).latest("created_at")
+
+        self.assertEqual(
+            audit.action,
+            AuditLog.Action.LOGIN,
+        )
+
+        self.assertEqual(
+            audit.actor,
+            self.user,
+        )
+
+        self.assertEqual(
+            audit.object_id,
+            str(self.user.id),
+        )
+
+    def test_failed_login_does_not_create_audit_log(self):
+        from apps.audit.models import AuditLog
+
+        response = self.client.post(
+            self.token_url,
+            {
+                "username": "reza",
+                "password": "WrongPassword123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+        self.assertFalse(
+            AuditLog.objects.filter(
+                actor=self.user,
+                action=AuditLog.Action.LOGIN,
+            ).exists()
         )
 
     def test_login_with_wrong_password_fails(self):
@@ -1164,4 +1227,303 @@ class UserSecurityAPITest(APITestCase):
         self.assertEqual(
             self.normal_user.first_name,
             "UpdatedByStaff",
+        )
+
+class UserAuditAPITest(APITestCase):
+
+    def setUp(self):
+        self.staff_user = User.objects.create_user(
+            username="staff",
+            password="StrongPassword123",
+            is_staff=True,
+        )
+
+        self.normal_user = User.objects.create_user(
+            username="reza",
+            password="StrongPassword123",
+            first_name="Reza",
+            last_name="Test",
+            email="reza@example.com",
+        )
+
+        self.superuser = User.objects.create_superuser(
+            username="admin",
+            password="StrongPassword123",
+        )
+
+        self.users_url = "/api/accounts/"
+        self.audit_url = "/api/accounts/users/"
+
+    def test_create_user_creates_audit_log(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.post(
+            self.audit_url,
+            {
+                "username": "newuser",
+                "password": "NewStrongPassword123",
+                "first_name": "New",
+                "last_name": "User",
+                "email": "new@example.com",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        user = User.objects.get(
+            username="newuser"
+        )
+
+        audit = AuditLog.objects.get(
+            object_id=str(user.id)
+        )
+
+        self.assertEqual(
+            audit.action,
+            AuditLog.Action.CREATE,
+        )
+
+        self.assertEqual(
+            audit.actor,
+            self.staff_user,
+        )
+
+        self.assertEqual(
+            audit.app_label,
+            "accounts",
+        )
+
+        self.assertEqual(
+            audit.model_name,
+            "user",
+        )
+
+    def test_create_user_does_not_log_password(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.post(
+            self.audit_url,
+            {
+                "username": "secure_user",
+                "password": "SecretPassword123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        user = User.objects.get(
+            username="secure_user"
+        )
+
+        audit = AuditLog.objects.get(
+            object_id=str(user.id)
+        )
+
+        self.assertNotIn(
+            "password",
+            audit.changes,
+        )
+
+        self.assertNotIn(
+            "SecretPassword123",
+            str(audit.changes),
+        )
+
+    def test_update_user_creates_audit_log(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.patch(
+            f"{self.audit_url}{self.normal_user.id}/",
+            {
+                "first_name": "Updated",
+                "last_name": "Person",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        audit = AuditLog.objects.filter(
+            actor=self.staff_user,
+            action=AuditLog.Action.UPDATE,
+            object_id=str(self.normal_user.id),
+        ).latest("created_at")
+
+        self.assertEqual(
+            audit.changes["first_name"]["old"],
+            "Reza",
+        )
+
+        self.assertEqual(
+            audit.changes["first_name"]["new"],
+            "Updated",
+        )
+
+        self.assertEqual(
+            audit.changes["last_name"]["old"],
+            "Test",
+        )
+
+        self.assertEqual(
+            audit.changes["last_name"]["new"],
+            "Person",
+        )
+
+    def test_update_without_changes_does_not_create_audit_log(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        before_count = AuditLog.objects.count()
+
+        response = self.client.patch(
+            f"{self.audit_url}{self.normal_user.id}/",
+            {
+                "first_name": "Reza",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            AuditLog.objects.count(),
+            before_count,
+        )
+
+    def test_delete_user_creates_audit_log(self):
+        self.client.force_authenticate(
+            user=self.superuser
+        )
+
+        user_id = self.normal_user.id
+
+        response = self.client.delete(
+            f"{self.audit_url}{user_id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_204_NO_CONTENT,
+        )
+
+        audit = AuditLog.objects.get(
+            object_id=str(user_id)
+        )
+
+        self.assertEqual(
+            audit.action,
+            AuditLog.Action.DELETE,
+        )
+
+        self.assertEqual(
+            audit.actor,
+            self.superuser,
+        )
+
+        self.assertEqual(
+            audit.object_id,
+            str(user_id),
+        )
+
+        self.assertFalse(
+            User.objects.filter(
+                id=user_id
+            ).exists()
+        )
+
+    def test_password_change_creates_audit_log(self):
+        self.client.force_authenticate(
+            user=self.normal_user
+        )
+
+        response = self.client.post(
+            f"{self.audit_url}{self.normal_user.id}/password/",
+            {
+                "new_password": "NewPassword123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        audit = AuditLog.objects.filter(
+            actor=self.normal_user,
+            action=AuditLog.Action.PASSWORD_CHANGE,
+            object_id=str(self.normal_user.id),
+        ).latest("created_at")
+
+        self.assertEqual(
+            audit.action,
+            AuditLog.Action.PASSWORD_CHANGE,
+        )
+
+        self.assertEqual(
+            audit.actor,
+            self.normal_user,
+        )
+
+        self.assertEqual(
+            audit.object_id,
+            str(self.normal_user.id),
+        )
+
+
+    def test_password_change_does_not_store_password(self):
+        self.client.force_authenticate(
+            user=self.normal_user
+        )
+
+        new_password = "SuperSecretPassword123"
+
+        response = self.client.post(
+            f"{self.audit_url}{self.normal_user.id}/password/",
+            {
+                "new_password": new_password,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        audit = AuditLog.objects.filter(
+            actor=self.normal_user,
+            action=AuditLog.Action.PASSWORD_CHANGE,
+            object_id=str(self.normal_user.id),
+        ).latest("created_at")
+
+        self.assertNotIn(
+            "password",
+            audit.changes,
+        )
+
+        self.assertNotIn(
+            new_password,
+            str(audit.changes),
         )
