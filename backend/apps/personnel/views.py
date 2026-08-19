@@ -122,6 +122,7 @@ class EmployeeBankAccountViewSet(viewsets.ModelViewSet):
             )
 
         return queryset
+    pagination_class = None
 
 class EmployeePromissoryNoteViewSet(viewsets.ModelViewSet):
 
@@ -143,6 +144,7 @@ class EmployeePromissoryNoteViewSet(viewsets.ModelViewSet):
             )
 
         return queryset
+    pagination_class = None
     
 class EmployeeDocumentViewSet(viewsets.ModelViewSet):
 
@@ -197,3 +199,4 @@ class EmployeeDocumentViewSet(viewsets.ModelViewSet):
         return queryset
 
     serializer_class = EmployeeDocumentSerializer
+    pagination_class = None

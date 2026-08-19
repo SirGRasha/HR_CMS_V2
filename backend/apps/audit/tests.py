@@ -1,4 +1,7 @@
-﻿from django.test import TestCase
+﻿from rest_framework import status
+from rest_framework.test import APITestCase
+
+from django.test import TestCase
 from rest_framework.test import APIRequestFactory
 
 from apps.accounts.models import User
@@ -244,4 +247,466 @@ class AuditServiceTest(TestCase):
         self.assertEqual(
             AuditLog.objects.count(),
             3,
+        )
+
+class AuditLogAPITest(APITestCase):
+
+    def setUp(self):
+        self.normal_user = User.objects.create_user(
+            username="normal",
+            password="StrongPassword123",
+        )
+
+        self.staff_user = User.objects.create_user(
+            username="staff",
+            password="StrongPassword123",
+            is_staff=True,
+        )
+
+        self.superuser = User.objects.create_superuser(
+            username="admin",
+            password="StrongPassword123",
+        )
+
+        self.audit = AuditLog.objects.create(
+            actor=self.staff_user,
+            action=AuditLog.Action.UPDATE,
+            app_label="accounts",
+            model_name="user",
+            object_id="1",
+            object_repr="normal",
+            changes={
+                "first_name": {
+                    "old": "Old",
+                    "new": "New",
+                }
+            },
+            ip_address="192.168.1.100",
+            user_agent="HR-CG-Test-Agent",
+        )
+
+        self.audit_url = "/api/audit/"
+
+    def test_search_by_object_repr(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.get(
+            self.audit_url,
+            {
+                "search": "normal",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            1,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["object_repr"],
+            "normal",
+        )
+
+    def test_search_by_actor_username(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.get(
+            self.audit_url,
+            {
+                "search": "staff",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            1,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["actor_username"],
+            "staff",
+        )
+
+    def test_search_by_actor_first_name(self):
+        self.staff_user.first_name = "Reza"
+        self.staff_user.save(
+            update_fields=["first_name"]
+        )
+
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.get(
+            self.audit_url,
+            {
+                "search": "Reza",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            1,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["actor_username"],
+            "staff",
+        )
+
+    def test_search_without_results_returns_empty(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.get(
+            self.audit_url,
+            {
+                "search": "DoesNotExist",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            0,
+        )
+
+        self.assertEqual(
+            response.data["results"],
+            [],
+        )
+
+        self.audit_url = "/api/audit/"
+
+    def test_normal_user_cannot_view_audit_logs(self):
+        self.client.force_authenticate(
+            user=self.normal_user
+        )
+
+        response = self.client.get(
+            self.audit_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_staff_can_view_audit_logs(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.get(
+            self.audit_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+    def test_superuser_can_view_audit_logs(self):
+        self.client.force_authenticate(
+            user=self.superuser
+        )
+
+        response = self.client.get(
+            self.audit_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+    def test_unauthenticated_user_cannot_view_audit_logs(self):
+        response = self.client.get(
+            self.audit_url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_audit_log_detail_is_read_only(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.get(
+            f"{self.audit_url}{self.audit.id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["action"],
+            AuditLog.Action.UPDATE,
+        )
+
+    def test_audit_log_create_is_not_allowed(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.post(
+            self.audit_url,
+            {
+                "action": AuditLog.Action.CREATE,
+                "app_label": "accounts",
+                "model_name": "user",
+                "object_id": "999",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def test_audit_log_update_is_not_allowed(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.patch(
+            f"{self.audit_url}{self.audit.id}/",
+            {
+                "object_repr": "Modified",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def test_audit_log_delete_is_not_allowed(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.delete(
+            f"{self.audit_url}{self.audit.id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def test_filter_by_actor(self):
+        other_user = User.objects.create_user(
+            username="other",
+            password="StrongPassword123",
+        )
+
+        AuditLog.objects.create(
+            actor=other_user,
+            action=AuditLog.Action.CREATE,
+            app_label="personnel",
+            model_name="employee",
+            object_id="2",
+            object_repr="other",
+        )
+
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.get(
+            self.audit_url,
+            {
+                "actor": self.staff_user.id,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            1,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["actor"],
+            self.staff_user.id,
+        )
+
+    def test_filter_by_action(self):
+        AuditLog.objects.create(
+            actor=self.staff_user,
+            action=AuditLog.Action.CREATE,
+            app_label="personnel",
+            model_name="employee",
+            object_id="2",
+            object_repr="employee",
+        )
+
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.get(
+            self.audit_url,
+            {
+                "action": AuditLog.Action.CREATE,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            1,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["action"],
+            AuditLog.Action.CREATE,
+        )
+
+    def test_filter_by_app_label(self):
+        AuditLog.objects.create(
+            actor=self.staff_user,
+            action=AuditLog.Action.CREATE,
+            app_label="personnel",
+            model_name="employee",
+            object_id="2",
+            object_repr="employee",
+        )
+
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.get(
+            self.audit_url,
+            {
+                "app_label": "personnel",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            1,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["app_label"],
+            "personnel",
+        )
+
+    def test_filter_by_model_name(self):
+        AuditLog.objects.create(
+            actor=self.staff_user,
+            action=AuditLog.Action.CREATE,
+            app_label="personnel",
+            model_name="employee",
+            object_id="2",
+            object_repr="employee",
+        )
+
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.get(
+            self.audit_url,
+            {
+                "model_name": "employee",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            1,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["model_name"],
+            "employee",
+        )
+
+    def test_filter_by_object_id(self):
+        AuditLog.objects.create(
+            actor=self.staff_user,
+            action=AuditLog.Action.CREATE,
+            app_label="personnel",
+            model_name="employee",
+            object_id="999",
+            object_repr="employee",
+        )
+
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.get(
+            self.audit_url,
+            {
+                "object_id": "999",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            1,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["object_id"],
+            "999",
         )

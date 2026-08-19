@@ -1,6 +1,8 @@
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
+from rest_framework_simplejwt.tokens import RefreshToken
+
 from apps.accounts.models import User
 
 
@@ -195,3 +197,27 @@ class ChangePasswordSerializer(serializers.Serializer):
     def validate_new_password(self, value):
         validate_password(value)
         return value
+
+class LogoutSerializer(serializers.Serializer):
+    refresh = serializers.CharField(
+        write_only=True,
+        required=True,
+    )
+
+    def validate(self, attrs):
+        refresh_token = attrs["refresh"]
+
+        try:
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+        except Exception:
+            raise serializers.ValidationError(
+                {
+                    "refresh": (
+                        "Invalid or already blacklisted "
+                        "refresh token."
+                    )
+                }
+            )
+
+        return attrs

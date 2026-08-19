@@ -50,6 +50,7 @@ class OrganizationUnitViewSet(viewsets.ModelViewSet):
                 )
 
         return queryset
+    pagination_class = None
 
 
 class PositionViewSet(viewsets.ModelViewSet):
@@ -87,3 +88,4 @@ class PositionViewSet(viewsets.ModelViewSet):
             )
 
         return queryset
+    pagination_class = None

@@ -338,6 +338,111 @@ class JWTAuthenticationTest(APITestCase):
             response.data,
         )
 
+    def test_logout_blacklists_refresh_token_and_creates_audit_log(self):
+        from apps.audit.models import AuditLog
+
+        response = self.client.post(
+            self.token_url,
+            {
+                "username": "reza",
+                "password": "StrongPassword123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        refresh_token = response.data["refresh"]
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=(
+                f"Bearer {response.data['access']}"
+            )
+        )
+
+        response = self.client.post(
+            "/api/accounts/logout/",
+            {
+                "refresh": refresh_token,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["detail"],
+            "Logout successful.",
+        )
+
+        audit = AuditLog.objects.filter(
+            actor=self.user,
+            action=AuditLog.Action.LOGOUT,
+            object_id=str(self.user.id),
+        ).latest("created_at")
+
+        self.assertEqual(
+            audit.action,
+            AuditLog.Action.LOGOUT,
+        )
+
+        self.assertEqual(
+            audit.actor,
+            self.user,
+        )
+
+        self.assertEqual(
+            audit.object_id,
+            str(self.user.id),
+        )
+
+    def test_logout_with_invalid_refresh_token_fails(self):
+        from apps.audit.models import AuditLog
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.post(
+            "/api/accounts/logout/",
+            {
+                "refresh": "invalid-refresh-token",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertFalse(
+            AuditLog.objects.filter(
+                actor=self.user,
+                action=AuditLog.Action.LOGOUT,
+            ).exists()
+        )
+
+    def test_logout_requires_authentication(self):
+        response = self.client.post(
+            "/api/accounts/logout/",
+            {
+                "refresh": "invalid-refresh-token",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
 class UserManagementAPITest(APITestCase):
 
     def setUp(self):

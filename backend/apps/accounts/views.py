@@ -11,6 +11,7 @@ from apps.accounts.permissions import (
 )
 from apps.accounts.serializers import (
     ChangePasswordSerializer,
+    LogoutSerializer,
     UserCreateSerializer,
     UserSerializer,
     UserUpdateSerializer,
@@ -18,6 +19,9 @@ from apps.accounts.serializers import (
 from apps.audit.services import AuditService
 from apps.audit.utils import build_changes
 
+from rest_framework_simplejwt.serializers import (
+    TokenBlacklistSerializer,
+)
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
 )
@@ -30,6 +34,33 @@ class AuditTokenObtainPairView(
     TokenObtainPairView
 ):
     serializer_class = AuditTokenObtainPairSerializer
+
+class LogoutAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = TokenBlacklistSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        serializer.save()
+
+        AuditService.logout(
+            actor=request.user,
+            instance=request.user,
+            request=request,
+        )
+
+        return Response(
+            {
+                "detail": "Logout successful."
+            },
+            status=status.HTTP_200_OK,
+        )
 
 class MeAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -166,5 +197,30 @@ class UserPasswordAPIView(APIView):
 
         return Response(
             {"detail": "Password changed successfully."},
+            status=status.HTTP_200_OK,
+        )
+
+class LogoutAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = LogoutSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        AuditService.logout(
+            actor=request.user,
+            instance=request.user,
+            request=request,
+        )
+
+        return Response(
+            {
+                "detail": "Logout successful."
+            },
             status=status.HTTP_200_OK,
         )

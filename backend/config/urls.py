@@ -40,4 +40,9 @@ urlpatterns = [
         "api/organization/",
         include("apps.organization.urls"),
     ),
+
+    path(
+        "api/audit/",
+        include("apps.audit.urls"),
+    ),
 ]

@@ -6,6 +6,7 @@ from rest_framework_simplejwt.views import (
 
 from apps.accounts.views import (
     AuditTokenObtainPairView,
+    LogoutAPIView,
     MeAPIView,
     UserPasswordAPIView,
     UserViewSet,
@@ -23,14 +24,19 @@ router.register(
 
 urlpatterns = [
     path(
-    "token/",
-    AuditTokenObtainPairView.as_view(),
-    name="token_obtain_pair",
+        "token/",
+        AuditTokenObtainPairView.as_view(),
+        name="token_obtain_pair",
     ),
     path(
         "token/refresh/",
         TokenRefreshView.as_view(),
         name="token_refresh",
+    ),
+    path(
+        "logout/",
+        LogoutAPIView.as_view(),
+        name="logout",
     ),
     path(
         "me/",

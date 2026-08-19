@@ -122,6 +122,7 @@ class EmployeeSalaryViewSet(viewsets.ModelViewSet):
             data,
             status=status.HTTP_200_OK,
         )
+    pagination_class = None
 
 
 class PayrollDeductionViewSet(viewsets.ModelViewSet):
@@ -161,3 +162,4 @@ class PayrollDeductionViewSet(viewsets.ModelViewSet):
             )
 
         return queryset
+    pagination_class = None
