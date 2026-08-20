@@ -1,3 +1,84 @@
-from django.shortcuts import render
+from django.utils import timezone
 
-# Create your views here.
+from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
+
+from .models import Document
+from .serializers import DocumentSerializer
+
+
+class DocumentViewSet(viewsets.ModelViewSet):
+
+    queryset = (
+        Document.objects
+        .select_related("uploaded_by")
+        .all()
+        .order_by("-uploaded_at")
+    )
+
+    serializer_class = DocumentSerializer
+
+    permission_classes = [
+        IsAuthenticated,
+    ]
+
+    def get_queryset(self):
+
+        queryset = super().get_queryset()
+
+        document_type = self.request.query_params.get(
+            "document_type"
+        )
+
+        is_verified = self.request.query_params.get(
+            "is_verified"
+        )
+
+        expiry_status = self.request.query_params.get(
+            "expiry_status"
+        )
+
+        if document_type:
+            queryset = queryset.filter(
+                document_type=document_type
+            )
+
+        if is_verified is not None:
+
+            if is_verified.lower() == "true":
+                queryset = queryset.filter(
+                    is_verified=True
+                )
+
+            elif is_verified.lower() == "false":
+                queryset = queryset.filter(
+                    is_verified=False
+                )
+
+        today = timezone.localdate()
+
+        if expiry_status == "expired":
+
+            queryset = queryset.filter(
+                expiry_date__lt=today
+            )
+
+        elif expiry_status == "valid":
+
+            queryset = queryset.filter(
+                expiry_date__gte=today
+            )
+
+        elif expiry_status == "no_expiry":
+
+            queryset = queryset.filter(
+                expiry_date__isnull=True
+            )
+
+        return queryset
+
+    def perform_create(self, serializer):
+
+        serializer.save(
+            uploaded_by=self.request.user
+        )

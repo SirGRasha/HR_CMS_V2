@@ -45,4 +45,9 @@ urlpatterns = [
         "api/audit/",
         include("apps.audit.urls"),
     ),
+
+    path(
+        "api/documents/",
+        include("apps.documents.urls"),
+    ),
 ]
