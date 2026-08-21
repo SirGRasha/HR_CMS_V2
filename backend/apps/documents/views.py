@@ -1,6 +1,7 @@
 from django.utils import timezone
 
 from rest_framework import viewsets
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 
 from .models import Document
@@ -53,6 +54,35 @@ class DocumentViewSet(viewsets.ModelViewSet):
             elif is_verified.lower() == "false":
                 queryset = queryset.filter(
                     is_verified=False
+                )
+
+            else:
+                raise ValidationError(
+                    {
+                        "is_verified": (
+                            "Invalid value. "
+                            "Allowed values are: true, false."
+                        )
+                    }
+                )
+
+        if expiry_status:
+
+            allowed_expiry_statuses = {
+                "expired",
+                "valid",
+                "no_expiry",
+            }
+
+            if expiry_status not in allowed_expiry_statuses:
+                raise ValidationError(
+                    {
+                        "expiry_status": (
+                            "Invalid value. "
+                            "Allowed values are: "
+                            "expired, valid, no_expiry."
+                        )
+                    }
                 )
 
         today = timezone.localdate()
