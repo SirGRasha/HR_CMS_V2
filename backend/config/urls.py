@@ -50,4 +50,9 @@ urlpatterns = [
         "api/documents/",
         include("apps.documents.urls"),
     ),
+
+    path(
+        "api/requests/",
+        include("apps.requests.urls"),
+    ),
 ]
