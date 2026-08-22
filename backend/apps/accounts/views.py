@@ -1,5 +1,8 @@
 from rest_framework import status, viewsets
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import (
+    AllowAny,
+    IsAuthenticated,
+)
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -27,6 +30,7 @@ from apps.audit.utils import build_changes
 class AuditTokenObtainPairView(
     TokenObtainPairView
 ):
+    permission_classes = [AllowAny]
     serializer_class = AuditTokenObtainPairSerializer
 
 #(class LogoutAPIView(APIView):

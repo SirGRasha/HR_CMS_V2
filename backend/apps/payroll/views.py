@@ -1,6 +1,6 @@
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.payroll.models import EmployeeSalary, PayrollDeduction
@@ -28,7 +28,7 @@ class EmployeeSalaryViewSet(viewsets.ModelViewSet):
     )
 
     serializer_class = EmployeeSalarySerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -141,7 +141,7 @@ class PayrollDeductionViewSet(viewsets.ModelViewSet):
     )
 
     serializer_class = PayrollDeductionSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         queryset = super().get_queryset()

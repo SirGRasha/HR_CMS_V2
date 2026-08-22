@@ -1094,6 +1094,15 @@ class EmployeePromissoryNoteTest(TestCase):
 class EmployeeBankAccountAPITest(APITestCase):
 
     def setUp(self):
+        self.user = User.objects.create_user(
+            username="bank_account_testuser",
+            password="StrongPassword123",
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
         self.employee = Employee.objects.create(
             personnel_code="BANK-API-001",
             first_name="تست",
@@ -1302,6 +1311,15 @@ class EmployeeBankAccountAPITest(APITestCase):
 class EmployeePromissoryNoteAPITest(APITestCase):
 
     def setUp(self):
+        self.user = User.objects.create_user(
+            username="promissory_note_testuser",
+            password="StrongPassword123",
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
         self.employee = Employee.objects.create(
             personnel_code="NOTE-API-001",
             first_name="تست",
@@ -1507,6 +1525,15 @@ class EmployeePromissoryNoteAPITest(APITestCase):
 class EmployeeDocumentAPITest(APITestCase):
 
     def setUp(self):
+        self.user = User.objects.create_user(
+            username="document_testuser",
+            password="StrongPassword123",
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
         self.employee = Employee.objects.create(
             personnel_code="DOC-API-001",
             first_name="تست",

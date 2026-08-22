@@ -6,6 +6,7 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.accounts.models import User
 from apps.personnel.models import Employee, EmployeeChild
 from apps.payroll.models import EmployeeSalary, PayrollDeduction
 from apps.payroll.services import PayrollCalculator
@@ -299,6 +300,16 @@ class PayrollCalculatorTest(TestCase):
 class EmployeeSalaryAPITest(APITestCase):
 
     def setUp(self):
+
+        self.user = User.objects.create_user(
+            username="payroll_test",
+            password="StrongPassword123",
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+        
         self.employee = Employee.objects.create(
             personnel_code="API-PAY-001",
             first_name="تست",
@@ -999,6 +1010,16 @@ class EmployeeSalaryValidationTest(TestCase):
 class PayrollDeductionAPITest(APITestCase):
 
     def setUp(self):
+
+        self.user = User.objects.create_user(
+            username="payroll_deduction_test",
+            password="StrongPassword123",
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
         self.employee = Employee.objects.create(
             personnel_code="DED-001",
             first_name="رضا",
