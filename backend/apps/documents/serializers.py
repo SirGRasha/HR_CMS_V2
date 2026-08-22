@@ -86,4 +86,32 @@ class DocumentSerializer(serializers.ModelSerializer):
                 "تاریخ انقضا نمی‌تواند در گذشته باشد."
             )
 
+    def validate_is_verified(self, value):
+        request = self.context.get("request")
+
+        # Staff can freely verify/unverify documents.
+        if (
+            request
+            and request.user.is_authenticated
+            and request.user.is_staff
+        ):
+            return value
+
+        # Normal users cannot verify a document.
+        if value is True:
+            raise serializers.ValidationError(
+                "Only staff users can verify documents."
+            )
+
+        # A verified document cannot be unverified by a normal user.
+        if (
+            self.instance is not None
+            and self.instance.is_verified
+            and value is False
+        ):
+            raise serializers.ValidationError(
+                "Only staff users can change the verification status "
+                "of a verified document."
+            )
+
         return value

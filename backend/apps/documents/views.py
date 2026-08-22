@@ -1,10 +1,11 @@
-from django.utils import timezone
+﻿from django.utils import timezone
 
 from rest_framework import viewsets
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 
 from .models import Document
+from .permissions import DocumentPermission
 from .serializers import DocumentSerializer
 
 
@@ -21,11 +22,17 @@ class DocumentViewSet(viewsets.ModelViewSet):
 
     permission_classes = [
         IsAuthenticated,
+        DocumentPermission,
     ]
 
     def get_queryset(self):
 
         queryset = super().get_queryset()
+
+        if not self.request.user.is_staff:
+            queryset = queryset.filter(
+                uploaded_by=self.request.user
+            )
 
         document_type = self.request.query_params.get(
             "document_type"
@@ -88,19 +95,16 @@ class DocumentViewSet(viewsets.ModelViewSet):
         today = timezone.localdate()
 
         if expiry_status == "expired":
-
             queryset = queryset.filter(
                 expiry_date__lt=today
             )
 
         elif expiry_status == "valid":
-
             queryset = queryset.filter(
                 expiry_date__gte=today
             )
 
         elif expiry_status == "no_expiry":
-
             queryset = queryset.filter(
                 expiry_date__isnull=True
             )
@@ -108,7 +112,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-
         serializer.save(
             uploaded_by=self.request.user
         )

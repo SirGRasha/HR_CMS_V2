@@ -4,6 +4,7 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.accounts.models import User
 from apps.organization.models import OrganizationUnit, Position
 from apps.organization.serializers import (
     OrganizationUnitSerializer,
@@ -297,6 +298,26 @@ class PositionSerializerTest(TestCase):
 class OrganizationUnitAPITest(APITestCase):
 
     def setUp(self):
+        self.normal_user = User.objects.create_user(
+            username="normal",
+            password="StrongPassword123",
+        )
+
+        self.staff_user = User.objects.create_user(
+            username="staff",
+            password="StrongPassword123",
+            is_staff=True,
+        )
+
+        self.superuser = User.objects.create_superuser(
+            username="admin",
+            password="StrongPassword123",
+        )
+
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
         self.unit = OrganizationUnit.objects.create(
             code="IT",
             name="واحد فناوری اطلاعات",
@@ -505,20 +526,120 @@ class OrganizationUnitAPITest(APITestCase):
             response.data,
         )
 
+    def test_unauthenticated_user_cannot_list_units(self):
+        self.client.force_authenticate(user=None)
+
+        response = self.client.get(
+            "/api/organization/units/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+
+    def test_normal_user_can_list_units(self):
+        self.client.force_authenticate(
+            user=self.normal_user
+        )
+
+        response = self.client.get(
+            "/api/organization/units/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+
+    def test_normal_user_cannot_create_unit(self):
+        self.client.force_authenticate(
+            user=self.normal_user
+        )
+
+        response = self.client.post(
+            "/api/organization/units/",
+            self.get_valid_data(),
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+
+    def test_normal_user_cannot_update_unit(self):
+        self.client.force_authenticate(
+            user=self.normal_user
+        )
+
+        response = self.client.patch(
+            f"/api/organization/units/{self.unit.id}/",
+            {
+                "name": "Unauthorized Update",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+
+    def test_normal_user_cannot_delete_unit(self):
+        self.client.force_authenticate(
+            user=self.normal_user
+        )
+
+        response = self.client.delete(
+            f"/api/organization/units/{self.unit.id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
 
 class PositionAPITest(APITestCase):
 
     def setUp(self):
+        self.normal_user = User.objects.create_user(
+            username="normal",
+            password="StrongPassword123",
+        )
+
+        self.staff_user = User.objects.create_user(
+            username="staff",
+            password="StrongPassword123",
+            is_staff=True,
+        )
+
+        self.superuser = User.objects.create_superuser(
+            username="admin",
+            password="StrongPassword123",
+        )
+
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
         self.unit = OrganizationUnit.objects.create(
             code="IT",
             name="واحد فناوری اطلاعات",
             unit_type=OrganizationUnit.UnitType.UNIT,
+            is_active=True,
         )
 
         self.position = Position.objects.create(
             code="IT-001",
             title="کارشناس IT",
             organization_unit=self.unit,
+            is_active=True,
         )
 
         self.inactive_position = Position.objects.create(
@@ -681,4 +802,82 @@ class PositionAPITest(APITestCase):
         self.assertIn(
             "code",
             response.data,
+        )
+
+    def test_unauthenticated_user_cannot_list_positions(self):
+        self.client.force_authenticate(user=None)
+
+        response = self.client.get(
+            "/api/organization/positions/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+
+    def test_normal_user_can_list_positions(self):
+        self.client.force_authenticate(
+            user=self.normal_user
+        )
+
+        response = self.client.get(
+            "/api/organization/positions/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+
+    def test_normal_user_cannot_create_position(self):
+        self.client.force_authenticate(
+            user=self.normal_user
+        )
+
+        response = self.client.post(
+            "/api/organization/positions/",
+            self.get_valid_data(),
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+
+    def test_normal_user_cannot_update_position(self):
+        self.client.force_authenticate(
+            user=self.normal_user
+        )
+
+        response = self.client.patch(
+            f"/api/organization/positions/{self.position.id}/",
+            {
+                "title": "Unauthorized Update",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+
+    def test_normal_user_cannot_delete_position(self):
+        self.client.force_authenticate(
+            user=self.normal_user
+        )
+
+        response = self.client.delete(
+            f"/api/organization/positions/{self.position.id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
         )

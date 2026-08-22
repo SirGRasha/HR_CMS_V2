@@ -1,7 +1,12 @@
 ﻿from rest_framework import viewsets
-from rest_framework.permissions import AllowAny
 
-from apps.organization.models import OrganizationUnit, Position
+from apps.organization.models import (
+    OrganizationUnit,
+    Position,
+)
+from apps.organization.permissions import (
+    IsAuthenticatedOrStaffWrite,
+)
 from apps.organization.serializers import (
     OrganizationUnitSerializer,
     PositionSerializer,
@@ -21,7 +26,9 @@ class OrganizationUnitViewSet(viewsets.ModelViewSet):
     )
 
     serializer_class = OrganizationUnitSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [
+        IsAuthenticatedOrStaffWrite
+    ]
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -66,7 +73,9 @@ class PositionViewSet(viewsets.ModelViewSet):
     )
 
     serializer_class = PositionSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [
+        IsAuthenticatedOrStaffWrite
+    ]
 
     def get_queryset(self):
         queryset = super().get_queryset()
