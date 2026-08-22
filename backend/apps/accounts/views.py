@@ -3,6 +3,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from rest_framework_simplejwt.views import TokenObtainPairView
+
 from apps.accounts.models import User
 from apps.accounts.permissions import (
     CanChangeUserPassword,
@@ -16,51 +18,41 @@ from apps.accounts.serializers import (
     UserSerializer,
     UserUpdateSerializer,
 )
-from apps.audit.services import AuditService
-from apps.audit.utils import build_changes
-
-from rest_framework_simplejwt.serializers import (
-    TokenBlacklistSerializer,
-)
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-)
-
 from apps.accounts.jwt_serializers import (
     AuditTokenObtainPairSerializer,
 )
+from apps.audit.services import AuditService
+from apps.audit.utils import build_changes
 
 class AuditTokenObtainPairView(
     TokenObtainPairView
 ):
     serializer_class = AuditTokenObtainPairSerializer
 
-class LogoutAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        serializer = TokenBlacklistSerializer(
-            data=request.data
-        )
-
-        serializer.is_valid(
-            raise_exception=True
-        )
-
-        serializer.save()
-
-        AuditService.logout(
-            actor=request.user,
-            instance=request.user,
-            request=request,
-        )
-
-        return Response(
-            {
-                "detail": "Logout successful."
-            },
-            status=status.HTTP_200_OK,
-        )
+#(class LogoutAPIView(APIView):
+#    permission_classes = [IsAuthenticated]
+#
+ #   def post(self, request):
+  #      serializer = TokenBlacklistSerializer(
+   #         data=request.data
+    #    )
+#
+ #       serializer.is_valid(
+  #          raise_exception=True
+   #     )
+#
+ #       serializer.save()
+#
+ #       AuditService.logout(
+  #          actor=request.user,
+   #         instance=request.user,
+    #        request=request,
+     #   )
+#
+ #       return Response(
+  #          {
+   ###       status=status.HTTP_200_OK,
+      #  )
 
 class MeAPIView(APIView):
     permission_classes = [IsAuthenticated]

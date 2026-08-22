@@ -1334,6 +1334,30 @@ class UserSecurityAPITest(APITestCase):
             "UpdatedByStaff",
         )
 
+    def test_staff_cannot_deactivate_self(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+        response = self.client.patch(
+            f"{self.users_url}{self.staff_user.id}/",
+            {
+                "is_active": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.staff_user.refresh_from_db()
+
+        self.assertTrue(
+            self.staff_user.is_active
+        )
+
 class UserAuditAPITest(APITestCase):
 
     def setUp(self):

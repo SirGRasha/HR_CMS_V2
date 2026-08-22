@@ -143,34 +143,9 @@ class UserUpdateSerializer(serializers.ModelSerializer):
                     }
                 )
 
-        # A superuser must not be able to disable or demote
-        # their own account.
+        # A user with elevated privileges must not be able
+        # to deactivate their own account.
         if self.instance and request.user == self.instance:
-            if (
-                "is_superuser" in attrs
-                and attrs["is_superuser"] is False
-            ):
-                raise serializers.ValidationError(
-                    {
-                        "is_superuser": (
-                            "A superuser cannot remove "
-                            "their own superuser status."
-                        )
-                    }
-                )
-
-            if (
-                "is_staff" in attrs
-                and attrs["is_staff"] is False
-            ):
-                raise serializers.ValidationError(
-                    {
-                        "is_staff": (
-                            "A superuser cannot remove "
-                            "their own staff status."
-                        )
-                    }
-                )
 
             if (
                 "is_active" in attrs
@@ -179,11 +154,38 @@ class UserUpdateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {
                         "is_active": (
-                            "A superuser cannot deactivate "
+                            "A user cannot deactivate "
                             "their own account."
                         )
                     }
                 )
+
+            if request.user.is_superuser:
+                if (
+                    "is_superuser" in attrs
+                    and attrs["is_superuser"] is False
+                ):
+                    raise serializers.ValidationError(
+                        {
+                            "is_superuser": (
+                                "A superuser cannot remove "
+                                "their own superuser status."
+                            )
+                        }
+                    )
+
+                if (
+                    "is_staff" in attrs
+                    and attrs["is_staff"] is False
+                ):
+                    raise serializers.ValidationError(
+                        {
+                            "is_staff": (
+                                "A superuser cannot remove "
+                                "their own staff status."
+                            )
+                        }
+                    )
 
         return attrs
 

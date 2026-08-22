@@ -306,3 +306,91 @@ class HRRequestAPITest(APITestCase):
             audit.model_name,
             "hrrequest",
         )
+
+    def test_staff_approval_creates_notification(self):
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        request = HRRequest.objects.create(
+            employee=self.employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LEAVE,
+            title="Annual Leave",
+        )
+
+        response = self.client.patch(
+            f"{self.url}{request.id}/",
+            {
+                "status": "APPROVED",
+                "response": "Approved.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        from apps.notifications.models import Notification
+
+        notification = Notification.objects.get(
+            recipient=self.user,
+            related_model="HRRequest",
+            related_object_id=str(request.id),
+        )
+
+        self.assertEqual(
+            notification.notification_type,
+            Notification.NotificationType.SUCCESS,
+        )
+
+        self.assertEqual(
+            notification.title,
+            "درخواست شما تأیید شد",
+        )
+
+    def test_staff_rejection_creates_notification(self):
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        request = HRRequest.objects.create(
+            employee=self.employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LEAVE,
+            title="Annual Leave",
+        )
+
+        response = self.client.patch(
+            f"{self.url}{request.id}/",
+            {
+                "status": "REJECTED",
+                "response": "Rejected.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        from apps.notifications.models import Notification
+
+        notification = Notification.objects.get(
+            recipient=self.user,
+            related_model="HRRequest",
+            related_object_id=str(request.id),
+        )
+
+        self.assertEqual(
+            notification.notification_type,
+            Notification.NotificationType.ERROR,
+        )
+
+        self.assertEqual(
+            notification.title,
+            "درخواست شما رد شد",
+        )

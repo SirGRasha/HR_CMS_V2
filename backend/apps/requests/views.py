@@ -2,6 +2,10 @@ from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
 from apps.audit.services import AuditService
+from apps.notifications.models import Notification
+from apps.notifications.services.notification_service import (
+    NotificationService,
+)
 
 from .models import HRRequest
 from .permissions import HRRequestPermission
@@ -120,6 +124,52 @@ class HRRequestViewSet(viewsets.ModelViewSet):
                 instance=instance,
                 request=self.request,
                 changes=changes,
+            )
+
+        if (
+            old_instance.status
+            != instance.status
+            and instance.status
+            in [
+                HRRequest.Status.APPROVED,
+                HRRequest.Status.REJECTED,
+            ]
+        ):
+            if instance.status == HRRequest.Status.APPROVED:
+                notification_type = (
+                    Notification.NotificationType.SUCCESS
+                )
+
+                title = "درخواست شما تأیید شد"
+
+                message = (
+                    f"درخواست «{instance.title}» "
+                    "با موفقیت تأیید شد."
+                )
+
+            else:
+                notification_type = (
+                    Notification.NotificationType.ERROR
+                )
+
+                title = "درخواست شما رد شد"
+
+                message = (
+                    f"درخواست «{instance.title}» "
+                    "رد شد."
+                )
+
+            NotificationService.create(
+                recipient=instance.requested_by,
+                notification_type=notification_type,
+                title=title,
+                message=message,
+                link=(
+                    f"/api/requests/requests/"
+                    f"{instance.id}/"
+                ),
+                related_model="HRRequest",
+                related_object_id=str(instance.id),
             )
 
     def perform_destroy(self, instance):

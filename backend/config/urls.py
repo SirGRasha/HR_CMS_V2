@@ -55,4 +55,14 @@ urlpatterns = [
         "api/requests/",
         include("apps.requests.urls"),
     ),
+
+    path(
+        "api/notifications/",
+        include("apps.notifications.urls"),
+    ),
+
+    path(
+        "api/correspondence/",
+        include("apps.correspondence.urls"),
+    ),
 ]
