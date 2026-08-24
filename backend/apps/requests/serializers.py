@@ -81,7 +81,9 @@ class HRRequestSerializer(serializers.ModelSerializer):
                 "Request context is required."
             )
 
+        # ---------------------------------------------------------
         # Finalized requests are immutable.
+        # ---------------------------------------------------------
         if (
             instance
             and instance.status
@@ -95,35 +97,48 @@ class HRRequestSerializer(serializers.ModelSerializer):
                 "Finalized requests cannot be modified."
             )
 
-        # Normal users cannot change request status.
+        # ---------------------------------------------------------
+        # Normal users cannot modify protected fields.
+        # ---------------------------------------------------------
         if (
             instance
             and not request.user.is_staff
         ):
-            immutable_fields = {
-                "employee",
-                "request_type",
+            protected_fields = {
+                "employee": (
+                    "Employee cannot be changed "
+                    "after request creation."
+                ),
+                "request_type": (
+                    "Request type cannot be changed "
+                    "after request creation."
+                ),
+                "response": (
+                    "Response can only be changed "
+                    "by staff users."
+                ),
+                "status": (
+                    "Only staff users can change "
+                    "request status."
+                ),
             }
 
-            changed_fields = (
-                immutable_fields
-                & set(attrs.keys())
-            )
+            errors = {}
 
-            if changed_fields:
-                raise serializers.ValidationError(
-                    {
-                        field: (
-                            f"{field.replace('_', ' ').capitalize()} "
-                            "cannot be changed after request creation."
-                        )
-                        for field in changed_fields
-                    }
-                )
+            for field, message in protected_fields.items():
+                if field in attrs:
+                    errors[field] = message
+
+            if errors:
+                raise serializers.ValidationError(errors)
+
+        # ---------------------------------------------------------
+        # Status changes are only allowed for staff.
+        # ---------------------------------------------------------
         if (
-            request
-            and not request.user.is_staff
+            instance
             and "status" in attrs
+            and not request.user.is_staff
         ):
             raise serializers.ValidationError(
                 {
@@ -134,7 +149,9 @@ class HRRequestSerializer(serializers.ModelSerializer):
                 }
             )
 
+        # ---------------------------------------------------------
         # Explicit state transition validation.
+        # ---------------------------------------------------------
         if (
             instance
             and "status" in attrs

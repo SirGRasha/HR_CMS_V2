@@ -395,6 +395,60 @@ class HRRequestAPITest(APITestCase):
             "درخواست شما رد شد",
         )
 
+    def test_staff_cancellation_creates_notification(self):
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        request = HRRequest.objects.create(
+            employee=self.employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LEAVE,
+            title="Annual Leave",
+        )
+
+        response = self.client.patch(
+            f"{self.url}{request.id}/",
+            {
+                "status": HRRequest.Status.CANCELLED,
+                "response": "Cancelled.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        from apps.notifications.models import Notification
+
+        notification = Notification.objects.get(
+            recipient=self.user,
+            related_model="HRRequest",
+            related_object_id=str(request.id),
+        )
+
+        self.assertEqual(
+            notification.notification_type,
+            Notification.NotificationType.WARNING,
+        )
+
+        self.assertEqual(
+            notification.title,
+            "درخواست شما لغو شد",
+        )
+
+        self.assertEqual(
+            notification.message,
+            "درخواست «Annual Leave» لغو شد.",
+        )
+
+        self.assertEqual(
+            notification.link,
+            f"/api/requests/requests/{request.id}/",
+        )
+
     def test_staff_cannot_delete_approved_request(self):
         request = HRRequest.objects.create(
             employee=self.employee,
@@ -1050,6 +1104,44 @@ class HRRequestAPITest(APITestCase):
 
         self.assertEqual(
             response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertIn(
+            "response",
+            response.data,
+        )
+
+        request.refresh_from_db()
+
+        self.assertEqual(
+            request.response,
+            "Original response.",
+        )
+
+    def test_staff_can_change_response_without_changing_status(self):
+        request = HRRequest.objects.create(
+            employee=self.employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LEAVE,
+            title="Annual Leave",
+            response="Original response.",
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.patch(
+            f"{self.url}{request.id}/",
+            {
+                "response": "Updated by staff.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
             status.HTTP_200_OK,
         )
 
@@ -1057,9 +1149,21 @@ class HRRequestAPITest(APITestCase):
 
         self.assertEqual(
             request.response,
-            "Forged response.",
+            "Updated by staff.",
         )
 
+        self.assertEqual(
+            request.status,
+            HRRequest.Status.PENDING,
+        )
+
+        self.assertIsNone(
+            request.reviewed_by
+        )
+
+        self.assertIsNone(
+            request.reviewed_at
+        )
 
     def test_user_cannot_change_requested_by(self):
         other_user = User.objects.create_user(
@@ -2035,4 +2139,418 @@ class HRRequestAPITest(APITestCase):
         self.assertEqual(
             response.status_code,
             status.HTTP_404_NOT_FOUND,
+        )
+
+    def test_staff_can_filter_requests_by_employee(self):
+        another_employee = Employee.objects.create(
+            first_name="Other",
+            last_name="Employee",
+            personnel_code="EMP-010",
+            national_id="1234567890",
+        )
+
+        HRRequest.objects.create(
+            employee=self.employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LEAVE,
+            title="Employee One Request",
+        )
+
+        HRRequest.objects.create(
+            employee=another_employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LOAN,
+            title="Employee Two Request",
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.get(
+            self.url,
+            {
+                "employee": another_employee.id,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            1,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["title"],
+            "Employee Two Request",
+        )
+
+
+    def test_staff_can_filter_requests_by_request_type(self):
+        HRRequest.objects.create(
+            employee=self.employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LEAVE,
+            title="Leave Request",
+        )
+
+        HRRequest.objects.create(
+            employee=self.employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LOAN,
+            title="Loan Request",
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.get(
+            self.url,
+            {
+                "request_type": HRRequest.RequestType.LOAN,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            1,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["request_type"],
+            HRRequest.RequestType.LOAN,
+        )
+
+
+    def test_staff_can_filter_requests_by_status(self):
+        HRRequest.objects.create(
+            employee=self.employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LEAVE,
+            title="Pending Request",
+            status=HRRequest.Status.PENDING,
+        )
+
+        HRRequest.objects.create(
+            employee=self.employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LOAN,
+            title="Approved Request",
+            status=HRRequest.Status.APPROVED,
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.get(
+            self.url,
+            {
+                "status": HRRequest.Status.APPROVED,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            1,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["status"],
+            HRRequest.Status.APPROVED,
+        )
+
+
+    def test_staff_can_combine_request_filters(self):
+        another_employee = Employee.objects.create(
+            first_name="Filter",
+            last_name="Employee",
+            personnel_code="EMP-011",
+            national_id="1234567891",
+        )
+
+        HRRequest.objects.create(
+            employee=another_employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LOAN,
+            title="Matching Request",
+            status=HRRequest.Status.APPROVED,
+        )
+
+        HRRequest.objects.create(
+            employee=another_employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LOAN,
+            title="Wrong Status",
+            status=HRRequest.Status.PENDING,
+        )
+
+        HRRequest.objects.create(
+            employee=another_employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LEAVE,
+            title="Wrong Type",
+            status=HRRequest.Status.APPROVED,
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.get(
+            self.url,
+            {
+                "employee": another_employee.id,
+                "request_type": HRRequest.RequestType.LOAN,
+                "status": HRRequest.Status.APPROVED,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            1,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["title"],
+            "Matching Request",
+        )
+
+
+    def test_user_filter_cannot_expose_other_users_requests(self):
+        other_user = User.objects.create_user(
+            username="filter_other",
+            password="StrongPassword123",
+        )
+
+        HRRequest.objects.create(
+            employee=self.employee,
+            requested_by=other_user,
+            request_type=HRRequest.RequestType.LEAVE,
+            title="Other User Request",
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            self.url,
+            {
+                "employee": self.employee.id,
+                "request_type": HRRequest.RequestType.LEAVE,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            0,
+        )
+
+
+    def test_user_filter_by_status_only_returns_own_requests(self):
+        other_user = User.objects.create_user(
+            username="status_other",
+            password="StrongPassword123",
+        )
+
+        HRRequest.objects.create(
+            employee=self.employee,
+            requested_by=other_user,
+            request_type=HRRequest.RequestType.LEAVE,
+            title="Other Approved Request",
+            status=HRRequest.Status.APPROVED,
+        )
+
+        HRRequest.objects.create(
+            employee=self.employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LEAVE,
+            title="My Approved Request",
+            status=HRRequest.Status.APPROVED,
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            self.url,
+            {
+                "status": HRRequest.Status.APPROVED,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            1,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["title"],
+            "My Approved Request",
+        )
+
+
+    def test_update_request_creates_update_audit_log(self):
+        from apps.audit.models import AuditLog
+
+        request = HRRequest.objects.create(
+            employee=self.employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LEAVE,
+            title="Original Title",
+            description="Original description.",
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.patch(
+            f"{self.url}{request.id}/",
+            {
+                "title": "Updated Title",
+                "description": "Updated description.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        audit = AuditLog.objects.filter(
+            object_id=str(request.id),
+            action=AuditLog.Action.UPDATE,
+            app_label="requests",
+            model_name="hrrequest",
+        ).latest("id")
+
+        self.assertEqual(
+            audit.actor,
+            self.user,
+        )
+
+        self.assertEqual(
+            audit.changes["title"]["old"],
+            "Original Title",
+        )
+
+        self.assertEqual(
+            audit.changes["title"]["new"],
+            "Updated Title",
+        )
+
+        self.assertEqual(
+            audit.changes["description"]["old"],
+            "Original description.",
+        )
+
+        self.assertEqual(
+            audit.changes["description"]["new"],
+            "Updated description.",
+        )
+
+
+    def test_staff_can_create_request_but_requested_by_is_staff_user(self):
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.post(
+            self.url,
+            {
+                "employee": self.employee.id,
+                "request_type": HRRequest.RequestType.CERTIFICATE,
+                "title": "Employment Certificate",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        request = HRRequest.objects.get(
+            id=response.data["id"]
+        )
+
+        self.assertEqual(
+            request.requested_by,
+            self.staff,
+        )
+
+
+    def test_staff_employee_filter_returns_requests_regardless_of_requester(self):
+        other_user = User.objects.create_user(
+            username="employee_filter_other",
+            password="StrongPassword123",
+        )
+
+        HRRequest.objects.create(
+            employee=self.employee,
+            requested_by=self.user,
+            request_type=HRRequest.RequestType.LEAVE,
+            title="User Request",
+        )
+
+        HRRequest.objects.create(
+            employee=self.employee,
+            requested_by=other_user,
+            request_type=HRRequest.RequestType.LOAN,
+            title="Other User Request",
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.get(
+            self.url,
+            {
+                "employee": self.employee.id,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            2,
         )

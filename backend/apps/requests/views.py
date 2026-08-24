@@ -133,6 +133,7 @@ class HRRequestViewSet(viewsets.ModelViewSet):
             in [
                 HRRequest.Status.APPROVED,
                 HRRequest.Status.REJECTED,
+                HRRequest.Status.CANCELLED,
             ]
         ):
             if instance.status == HRRequest.Status.APPROVED:
@@ -147,7 +148,7 @@ class HRRequestViewSet(viewsets.ModelViewSet):
                     "با موفقیت تأیید شد."
                 )
 
-            else:
+            elif instance.status == HRRequest.Status.REJECTED:
                 notification_type = (
                     Notification.NotificationType.ERROR
                 )
@@ -157,6 +158,18 @@ class HRRequestViewSet(viewsets.ModelViewSet):
                 message = (
                     f"درخواست «{instance.title}» "
                     "رد شد."
+                )
+
+            else:
+                notification_type = (
+                    Notification.NotificationType.WARNING
+                )
+
+                title = "درخواست شما لغو شد"
+
+                message = (
+                    f"درخواست «{instance.title}» "
+                    "لغو شد."
                 )
 
             NotificationService.create(
