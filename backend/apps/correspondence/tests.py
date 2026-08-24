@@ -705,3 +705,573 @@ class CorrespondenceAPITest(APITestCase):
             audit.actor,
             self.staff,
         )
+
+    def test_created_by_cannot_be_forged_on_create(self):
+        another_user = User.objects.create_user(
+            username="another",
+            password="StrongPassword123",
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        payload = self.get_payload()
+        payload["created_by"] = another_user.id
+
+        response = self.client.post(
+            self.url,
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        correspondence = Correspondence.objects.get(
+            id=response.data["id"]
+        )
+
+        self.assertEqual(
+            correspondence.created_by,
+            self.user,
+        )
+
+        self.assertNotEqual(
+            correspondence.created_by,
+            another_user,
+        )
+
+    def test_created_by_cannot_be_changed_on_update(self):
+        correspondence = self.create_correspondence()
+
+        another_user = User.objects.create_user(
+            username="another_update",
+            password="StrongPassword123",
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.patch(
+            f"{self.url}{correspondence.id}/",
+            {
+                "created_by": another_user.id,
+                "subject": "Updated Subject",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        correspondence.refresh_from_db()
+
+        self.assertEqual(
+            correspondence.created_by,
+            self.user,
+        )
+
+    def test_invalid_correspondence_type_is_rejected(self):
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        payload = self.get_payload()
+        payload["correspondence_type"] = "INVALID"
+
+        response = self.client.post(
+            self.url,
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    def test_invalid_status_is_rejected(self):
+        correspondence = self.create_correspondence()
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.patch(
+            f"{self.url}{correspondence.id}/",
+            {
+                "status": "INVALID_STATUS",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    def test_letter_number_only_spaces_is_rejected_on_api(self):
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        payload = self.get_payload()
+        payload["letter_number"] = "   "
+
+        response = self.client.post(
+            self.url,
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    def test_subject_only_spaces_is_rejected_on_api(self):
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        payload = self.get_payload()
+        payload["subject"] = "   "
+
+        response = self.client.post(
+            self.url,
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    def test_sender_only_spaces_is_rejected_on_api(self):
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        payload = self.get_payload()
+        payload["sender"] = "   "
+
+        response = self.client.post(
+            self.url,
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    def test_recipient_only_spaces_is_rejected_on_api(self):
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        payload = self.get_payload()
+        payload["recipient"] = "   "
+
+        response = self.client.post(
+            self.url,
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    def test_filter_by_multiple_fields(self):
+        self.create_correspondence(
+            correspondence_type=(
+                Correspondence.CorrespondenceType.INCOMING
+            ),
+            status=Correspondence.Status.DRAFT,
+            letter_number="IN-DRAFT-001",
+        )
+
+        self.create_correspondence(
+            correspondence_type=(
+                Correspondence.CorrespondenceType.INCOMING
+            ),
+            status=Correspondence.Status.SENT,
+            letter_number="IN-SENT-001",
+        )
+
+        self.create_correspondence(
+            correspondence_type=(
+                Correspondence.CorrespondenceType.OUTGOING
+            ),
+            status=Correspondence.Status.DRAFT,
+            letter_number="OUT-DRAFT-001",
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            self.url,
+            {
+                "correspondence_type": "INCOMING",
+                "status": "DRAFT",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            1,
+        )
+
+        self.assertEqual(
+            response.data["results"][0]["letter_number"],
+            "IN-DRAFT-001",
+        )
+
+    def test_update_without_changes_does_not_create_audit_log(self):
+        correspondence = self.create_correspondence()
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        before_count = AuditLog.objects.filter(
+            object_id=str(correspondence.id),
+            action=AuditLog.Action.UPDATE,
+        ).count()
+
+        response = self.client.patch(
+            f"{self.url}{correspondence.id}/",
+            {
+                "subject": correspondence.subject,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        after_count = AuditLog.objects.filter(
+            object_id=str(correspondence.id),
+            action=AuditLog.Action.UPDATE,
+        ).count()
+
+        self.assertEqual(
+            before_count,
+            after_count,
+        )
+
+    def test_staff_can_register_draft_correspondence(self):
+        correspondence = self.create_correspondence(
+            status=Correspondence.Status.DRAFT
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.patch(
+            f"{self.url}{correspondence.id}/",
+            {
+                "status": Correspondence.Status.REGISTERED,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        correspondence.refresh_from_db()
+
+        self.assertEqual(
+            correspondence.status,
+            Correspondence.Status.REGISTERED,
+        )
+
+
+    def test_staff_can_send_registered_correspondence(self):
+        correspondence = self.create_correspondence(
+            status=Correspondence.Status.REGISTERED
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.patch(
+            f"{self.url}{correspondence.id}/",
+            {
+                "status": Correspondence.Status.SENT,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        correspondence.refresh_from_db()
+
+        self.assertEqual(
+            correspondence.status,
+            Correspondence.Status.SENT,
+        )
+
+
+    def test_staff_can_receive_registered_correspondence(self):
+        correspondence = self.create_correspondence(
+            status=Correspondence.Status.REGISTERED
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.patch(
+            f"{self.url}{correspondence.id}/",
+            {
+                "status": Correspondence.Status.RECEIVED,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        correspondence.refresh_from_db()
+
+        self.assertEqual(
+            correspondence.status,
+            Correspondence.Status.RECEIVED,
+        )
+
+
+    def test_staff_can_archive_sent_correspondence(self):
+        correspondence = self.create_correspondence(
+            status=Correspondence.Status.SENT
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.patch(
+            f"{self.url}{correspondence.id}/",
+            {
+                "status": Correspondence.Status.ARCHIVED,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        correspondence.refresh_from_db()
+
+        self.assertEqual(
+            correspondence.status,
+            Correspondence.Status.ARCHIVED,
+        )
+
+
+    def test_staff_can_archive_received_correspondence(self):
+        correspondence = self.create_correspondence(
+            status=Correspondence.Status.RECEIVED
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.patch(
+            f"{self.url}{correspondence.id}/",
+            {
+                "status": Correspondence.Status.ARCHIVED,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        correspondence.refresh_from_db()
+
+        self.assertEqual(
+            correspondence.status,
+            Correspondence.Status.ARCHIVED,
+        )
+
+    def test_cannot_skip_from_draft_to_archived(self):
+        correspondence = self.create_correspondence(
+            status=Correspondence.Status.DRAFT
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.patch(
+            f"{self.url}{correspondence.id}/",
+            {
+                "status": Correspondence.Status.ARCHIVED,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+
+    def test_cannot_move_registered_back_to_draft(self):
+        correspondence = self.create_correspondence(
+            status=Correspondence.Status.REGISTERED
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.patch(
+            f"{self.url}{correspondence.id}/",
+            {
+                "status": Correspondence.Status.DRAFT,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+
+    def test_cannot_move_archived_correspondence_back(self):
+        correspondence = self.create_correspondence(
+            status=Correspondence.Status.ARCHIVED
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.patch(
+            f"{self.url}{correspondence.id}/",
+            {
+                "status": Correspondence.Status.DRAFT,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+
+    def test_cannot_move_sent_back_to_registered(self):
+        correspondence = self.create_correspondence(
+            status=Correspondence.Status.SENT
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.patch(
+            f"{self.url}{correspondence.id}/",
+            {
+                "status": Correspondence.Status.REGISTERED,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+
+    def test_cannot_move_received_to_sent(self):
+        correspondence = self.create_correspondence(
+            status=Correspondence.Status.RECEIVED
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.patch(
+            f"{self.url}{correspondence.id}/",
+            {
+                "status": Correspondence.Status.SENT,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    def test_staff_can_update_correspondence_without_changing_status(self):
+        correspondence = self.create_correspondence(
+            status=Correspondence.Status.REGISTERED
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.patch(
+            f"{self.url}{correspondence.id}/",
+            {
+                "subject": "Updated Subject",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        correspondence.refresh_from_db()
+
+        self.assertEqual(
+            correspondence.subject,
+            "Updated Subject",
+        )
+
+        self.assertEqual(
+            correspondence.status,
+            Correspondence.Status.REGISTERED,
+        )

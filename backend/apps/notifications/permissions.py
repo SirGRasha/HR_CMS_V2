@@ -21,7 +21,16 @@ class NotificationPermission(BasePermission):
         ):
             return False
 
+        # Custom notification actions use POST but are
+        # intentionally available to normal users.
         if request.method == "POST":
+            if view.action in [
+                "mark_as_read",
+                "mark_all_as_read",
+            ]:
+                return True
+
+            # Creating notifications is staff-only.
             return request.user.is_staff
 
         return True

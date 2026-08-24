@@ -76,6 +76,12 @@ class HRRequestSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         instance = self.instance
 
+        if not request:
+            raise serializers.ValidationError(
+                "Request context is required."
+            )
+
+        # Finalized requests are immutable.
         if (
             instance
             and instance.status
@@ -89,6 +95,31 @@ class HRRequestSerializer(serializers.ModelSerializer):
                 "Finalized requests cannot be modified."
             )
 
+        # Normal users cannot change request status.
+        if (
+            instance
+            and not request.user.is_staff
+        ):
+            immutable_fields = {
+                "employee",
+                "request_type",
+            }
+
+            changed_fields = (
+                immutable_fields
+                & set(attrs.keys())
+            )
+
+            if changed_fields:
+                raise serializers.ValidationError(
+                    {
+                        field: (
+                            f"{field.replace('_', ' ').capitalize()} "
+                            "cannot be changed after request creation."
+                        )
+                        for field in changed_fields
+                    }
+                )
         if (
             request
             and not request.user.is_staff
@@ -102,6 +133,41 @@ class HRRequestSerializer(serializers.ModelSerializer):
                     )
                 }
             )
+
+        # Explicit state transition validation.
+        if (
+            instance
+            and "status" in attrs
+        ):
+            current_status = instance.status
+            new_status = attrs["status"]
+
+            if (
+                current_status
+                != HRRequest.Status.PENDING
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "status": (
+                            "Only pending requests "
+                            "can change status."
+                        )
+                    }
+                )
+
+            allowed_statuses = {
+                HRRequest.Status.PENDING,
+                HRRequest.Status.APPROVED,
+                HRRequest.Status.REJECTED,
+                HRRequest.Status.CANCELLED,
+            }
+
+            if new_status not in allowed_statuses:
+                raise serializers.ValidationError(
+                    {
+                        "status": "Invalid request status."
+                    }
+                )
 
         return attrs
 

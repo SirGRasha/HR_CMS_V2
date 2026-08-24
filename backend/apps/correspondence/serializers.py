@@ -112,3 +112,57 @@ class CorrespondenceSerializer(serializers.ModelSerializer):
             )
 
         return value
+
+    def validate_status(self, value):
+        """
+        Validate correspondence status transitions.
+
+        Allowed workflow:
+
+            DRAFT -> REGISTERED
+            REGISTERED -> SENT
+            REGISTERED -> RECEIVED
+            SENT -> RECEIVED
+            SENT -> ARCHIVED
+            RECEIVED -> ARCHIVED
+
+        Backward transitions and skipping states are not allowed.
+        """
+
+        if not self.instance:
+            return value
+
+        current_status = self.instance.status
+
+        if current_status == value:
+            return value
+
+        allowed_transitions = {
+            Correspondence.Status.DRAFT: {
+                Correspondence.Status.REGISTERED,
+            },
+            Correspondence.Status.REGISTERED: {
+                Correspondence.Status.SENT,
+                Correspondence.Status.RECEIVED,
+            },
+            Correspondence.Status.SENT: {
+                Correspondence.Status.RECEIVED,
+                Correspondence.Status.ARCHIVED,
+            },
+            Correspondence.Status.RECEIVED: {
+                Correspondence.Status.ARCHIVED,
+            },
+            Correspondence.Status.ARCHIVED: set(),
+        }
+
+        allowed_statuses = allowed_transitions.get(
+            current_status,
+            set(),
+        )
+
+        if value not in allowed_statuses:
+            raise serializers.ValidationError(
+                "Invalid correspondence status transition."
+            )
+
+        return value

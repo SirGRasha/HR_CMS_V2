@@ -12,6 +12,33 @@ class NotificationSerializer(serializers.ModelSerializer):
         read_only=True,
     )
 
+    def validate(self, attrs):
+        request = self.context.get("request")
+
+        if (
+            request
+            and request.user.is_authenticated
+            and not request.user.is_staff
+        ):
+            allowed_fields = {"is_read"}
+
+            invalid_fields = (
+                set(attrs.keys()) - allowed_fields
+            )
+
+            if invalid_fields:
+                raise serializers.ValidationError(
+                    {
+                        field: (
+                            "Normal users can only "
+                            "change is_read."
+                        )
+                        for field in invalid_fields
+                    }
+                )
+
+        return attrs
+
     class Meta:
         model = Notification
 

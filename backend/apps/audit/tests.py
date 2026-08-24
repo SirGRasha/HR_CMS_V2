@@ -249,6 +249,60 @@ class AuditServiceTest(TestCase):
             3,
         )
 
+    def test_get_client_ip_uses_first_forwarded_ip(self):
+        request = self.factory.get(
+            "/",
+            HTTP_X_FORWARDED_FOR="203.0.113.10, 10.0.0.1",
+        )
+
+        ip = AuditService.get_client_ip(request)
+
+        self.assertEqual(
+            ip,
+            "203.0.113.10",
+        )
+
+
+    def test_get_client_ip_uses_remote_addr_without_forwarded_for(self):
+        request = self.factory.get(
+            "/",
+            REMOTE_ADDR="192.168.1.20",
+        )
+
+        ip = AuditService.get_client_ip(request)
+
+        self.assertEqual(
+            ip,
+            "192.168.1.20",
+        )
+
+
+    def test_get_user_agent(self):
+        request = self.factory.get(
+            "/",
+            HTTP_USER_AGENT="Mozilla/5.0 Test Agent",
+        )
+
+        user_agent = AuditService.get_user_agent(
+            request
+        )
+
+        self.assertEqual(
+            user_agent,
+            "Mozilla/5.0 Test Agent",
+        )
+
+
+    def test_audit_service_handles_missing_request(self):
+        self.assertIsNone(
+            AuditService.get_client_ip(None)
+        )
+
+        self.assertEqual(
+            AuditService.get_user_agent(None),
+            "",
+        )
+
 class AuditLogAPITest(APITestCase):
 
     def setUp(self):

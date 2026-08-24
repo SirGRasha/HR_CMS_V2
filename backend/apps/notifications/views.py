@@ -4,10 +4,6 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from apps.notifications.models import Notification
-from apps.notifications.services.notification_service import (
-    NotificationService,
-)
 
 from .models import Notification
 from .permissions import NotificationPermission
@@ -82,9 +78,14 @@ class NotificationViewSet(viewsets.ModelViewSet):
     def mark_as_read(self, request, pk=None):
         notification = self.get_object()
 
-        if not notification.is_read:
+        if (
+            not notification.is_read
+            or notification.read_at is None
+        ):
             notification.is_read = True
-            notification.read_at = timezone.now()
+
+            if notification.read_at is None:
+                notification.read_at = timezone.now()
 
             notification.save(
                 update_fields=[

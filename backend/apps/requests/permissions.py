@@ -3,14 +3,20 @@ from rest_framework.permissions import BasePermission
 
 class HRRequestPermission(BasePermission):
     """
-    Staff:
-        Full access, subject to business rules enforced by the serializer.
+    Staff users:
+        Can access all requests.
+        Can modify pending requests.
+        Cannot modify finalized requests because the serializer
+        enforces finalized-request protection.
+        Cannot delete finalized requests.
 
     Normal authenticated users:
         Can create requests.
         Can view their own requests.
         Can modify their own pending requests.
-        Cannot approve/reject/cancel requests.
+        Cannot modify another user's requests.
+        Cannot change request status.
+        Can delete their own pending requests.
         Cannot delete finalized requests.
     """
 
@@ -26,10 +32,15 @@ class HRRequestPermission(BasePermission):
         view,
         obj,
     ):
-        # Staff users can access all request objects.
-        # Business rules such as finalized-request protection
-        # are enforced at the serializer/service layer.
+        # Staff users can access all request objects,
+        # but finalized requests are protected below.
         if request.user.is_staff:
+            if request.method == "DELETE":
+                return (
+                    obj.status
+                    == obj.Status.PENDING
+                )
+
             return True
 
         # Normal users can only access their own requests.
@@ -44,17 +55,15 @@ class HRRequestPermission(BasePermission):
         ]:
             return True
 
-        # For PUT/PATCH, allow the owner to reach the serializer.
-        # The serializer is responsible for returning 400 when
-        # the request has already been finalized.
+        # PUT/PATCH reaches the serializer.
+        # The serializer blocks finalized requests.
         if request.method in [
             "PUT",
             "PATCH",
         ]:
             return True
 
-        # DELETE is different because serializers are not involved.
-        # Therefore finalized requests must be blocked here.
+        # DELETE is allowed only for pending requests.
         if request.method == "DELETE":
             return (
                 obj.status
