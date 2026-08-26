@@ -338,6 +338,65 @@ class JWTAuthenticationTest(APITestCase):
             response.data,
         )
 
+    def test_refresh_token_rotation_blacklists_old_refresh_token(self):
+        response = self.client.post(
+            self.token_url,
+            {
+                "username": "reza",
+                "password": "StrongPassword123",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        old_refresh_token = response.data["refresh"]
+
+        response = self.client.post(
+            self.refresh_url,
+            {
+                "refresh": old_refresh_token,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertIn(
+            "access",
+            response.data,
+        )
+
+        new_refresh_token = response.data.get("refresh")
+
+        self.assertIsNotNone(
+            new_refresh_token,
+        )
+
+        self.assertNotEqual(
+            old_refresh_token,
+            new_refresh_token,
+        )
+
+        response = self.client.post(
+            self.refresh_url,
+            {
+                "refresh": old_refresh_token,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
     def test_logout_blacklists_refresh_token_and_creates_audit_log(self):
         from apps.audit.models import AuditLog
 

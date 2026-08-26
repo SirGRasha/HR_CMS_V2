@@ -80,11 +80,12 @@ class DocumentSerializer(serializers.ModelSerializer):
         return value
 
     def validate_expiry_date(self, value):
-
         if value and value < timezone.localdate():
             raise serializers.ValidationError(
                 "تاریخ انقضا نمی‌تواند در گذشته باشد."
             )
+
+        return value
 
     def validate_is_verified(self, value):
         request = self.context.get("request")

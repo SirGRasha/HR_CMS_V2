@@ -9,6 +9,7 @@ from .models import EmployeePhone
 from .models import EmployeeBankAccount
 from .models import EmployeePromissoryNote
 from apps.organization.models import Position
+from apps.core.fields import JalaliDateField
 
 
 MAX_DOCUMENT_SIZE = 10 * 1024 * 1024
@@ -176,6 +177,21 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
     position_detail = serializers.SerializerMethodField()
 
+    birth_date = JalaliDateField(
+        allow_null=True,
+        required=False,
+    )
+
+    start_date = JalaliDateField(
+        allow_null=True,
+        required=False,
+    )
+
+    insurance_date = JalaliDateField(
+        allow_null=True,
+        required=False,
+    )
+
     class Meta:
         model = Employee
         fields = [
@@ -308,11 +324,18 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
 class EmployeeChildSerializer(serializers.ModelSerializer):
 
+    birth_date = JalaliDateField()
+
     class Meta:
         model = EmployeeChild
         fields = "__all__"
 
 class EmployeeDocumentSerializer(serializers.ModelSerializer):
+
+    expiry_date = JalaliDateField(
+    required=False,
+    allow_null=True,
+    )
 
     expiry_status = serializers.SerializerMethodField()
 

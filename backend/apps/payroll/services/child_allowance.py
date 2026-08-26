@@ -30,13 +30,10 @@ def calculate_age(birth_date, reference_date):
 def is_child_eligible(child, reference_date):
     """
     تعیین مشمول بودن فرزند برای حق اولاد.
-
-    زیر 18 سال:
-        مشمول
-
-    18 سال و بالاتر:
-        فقط در صورت داشتن گواهی اشتغال به تحصیل مشمول.
     """
+
+    if not child.is_active:
+        return False
 
     age = calculate_age(
         child.birth_date,

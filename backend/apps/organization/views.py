@@ -11,6 +11,8 @@ from apps.organization.serializers import (
     OrganizationUnitSerializer,
     PositionSerializer,
 )
+from apps.audit.services import AuditService
+from apps.audit.utils import build_changes
 
 
 class OrganizationUnitViewSet(viewsets.ModelViewSet):
@@ -28,6 +30,15 @@ class OrganizationUnitViewSet(viewsets.ModelViewSet):
     serializer_class = OrganizationUnitSerializer
     permission_classes = [
         IsAuthenticatedOrStaffWrite
+    ]
+
+    AUDIT_UPDATE_FIELDS = [
+        "code",
+        "name",
+        "unit_type",
+        "parent_id",
+        "is_active",
+        "description",
     ]
 
     def get_queryset(self):
@@ -57,7 +68,47 @@ class OrganizationUnitViewSet(viewsets.ModelViewSet):
                 )
 
         return queryset
+
     pagination_class = None
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+
+        AuditService.create(
+            actor=self.request.user,
+            instance=instance,
+            request=self.request,
+        )
+
+    def perform_update(self, serializer):
+        old_instance = OrganizationUnit.objects.get(
+            pk=serializer.instance.pk
+        )
+
+        instance = serializer.save()
+
+        changes = build_changes(
+            old_instance,
+            instance,
+            self.AUDIT_UPDATE_FIELDS,
+        )
+
+        if changes:
+            AuditService.update(
+                actor=self.request.user,
+                instance=instance,
+                request=self.request,
+                changes=changes,
+            )
+
+    def perform_destroy(self, instance):
+        AuditService.delete(
+            actor=self.request.user,
+            instance=instance,
+            request=self.request,
+        )
+
+        instance.delete()
 
 
 class PositionViewSet(viewsets.ModelViewSet):
@@ -75,6 +126,14 @@ class PositionViewSet(viewsets.ModelViewSet):
     serializer_class = PositionSerializer
     permission_classes = [
         IsAuthenticatedOrStaffWrite
+    ]
+
+    AUDIT_UPDATE_FIELDS = [
+        "code",
+        "title",
+        "organization_unit_id",
+        "is_active",
+        "description",
     ]
 
     def get_queryset(self):
@@ -97,4 +156,44 @@ class PositionViewSet(viewsets.ModelViewSet):
             )
 
         return queryset
+
     pagination_class = None
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+
+        AuditService.create(
+            actor=self.request.user,
+            instance=instance,
+            request=self.request,
+        )
+
+    def perform_update(self, serializer):
+        old_instance = Position.objects.get(
+            pk=serializer.instance.pk
+        )
+
+        instance = serializer.save()
+
+        changes = build_changes(
+            old_instance,
+            instance,
+            self.AUDIT_UPDATE_FIELDS,
+        )
+
+        if changes:
+            AuditService.update(
+                actor=self.request.user,
+                instance=instance,
+                request=self.request,
+                changes=changes,
+            )
+
+    def perform_destroy(self, instance):
+        AuditService.delete(
+            actor=self.request.user,
+            instance=instance,
+            request=self.request,
+        )
+
+        instance.delete()

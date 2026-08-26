@@ -1,8 +1,11 @@
+from decimal import Decimal
+
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.audit.services import AuditService
 from apps.payroll.models import EmployeeSalary, PayrollDeduction
 from apps.payroll.serializers import (
     EmployeeSalarySerializer,
@@ -53,6 +56,70 @@ class EmployeeSalaryViewSet(viewsets.ModelViewSet):
             )
 
         return queryset
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+
+        AuditService.create(
+            actor=self.request.user,
+            instance=instance,
+            request=self.request,
+        )
+
+    def perform_update(self, serializer):
+        old_instance = EmployeeSalary.objects.get(
+            pk=serializer.instance.pk
+        )
+
+        instance = serializer.save()
+
+        changes = {}
+
+        fields = [
+            "employee_id",
+            "year",
+            "month",
+            "monthly_wage",
+            "worker_food_allowance",
+            "housing_allowance",
+            "child_allowance",
+            "marriage_allowance",
+            "notes",
+        ]
+
+        for field in fields:
+            old_value = getattr(
+                old_instance,
+                field,
+            )
+
+            new_value = getattr(
+                instance,
+                field,
+            )
+
+            if old_value != new_value:
+                changes[field] = {
+                    "old": old_value,
+                    "new": new_value,
+                }
+
+        if changes:
+            AuditService.update(
+                actor=self.request.user,
+                instance=instance,
+                request=self.request,
+                changes=changes,
+            )
+
+    def perform_destroy(self, instance):
+        AuditService.delete(
+            actor=self.request.user,
+            instance=instance,
+            request=self.request,
+        )
+
+        instance.delete()
 
     @action(
         detail=True,
@@ -122,14 +189,11 @@ class EmployeeSalaryViewSet(viewsets.ModelViewSet):
             data,
             status=status.HTTP_200_OK,
         )
+
     pagination_class = None
 
 
 class PayrollDeductionViewSet(viewsets.ModelViewSet):
-    """
-    API مدیریت کسورات حقوق.
-    """
-
     queryset = (
         PayrollDeduction.objects
         .select_related(
@@ -162,4 +226,63 @@ class PayrollDeductionViewSet(viewsets.ModelViewSet):
             )
 
         return queryset
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+
+        AuditService.create(
+            actor=self.request.user,
+            instance=instance,
+            request=self.request,
+        )
+
+    def perform_update(self, serializer):
+        old_instance = PayrollDeduction.objects.get(
+            pk=serializer.instance.pk
+        )
+
+        instance = serializer.save()
+
+        fields = [
+            "salary_id",
+            "deduction_type",
+            "amount",
+            "description",
+        ]
+
+        changes = {}
+
+        for field in fields:
+            old_value = getattr(old_instance, field)
+            new_value = getattr(instance, field)
+
+            if old_value != new_value:
+                if isinstance(old_value, Decimal):
+                    old_value = str(old_value)
+
+                if isinstance(new_value, Decimal):
+                    new_value = str(new_value)
+
+                changes[field] = {
+                    "old": old_value,
+                    "new": new_value,
+                }
+
+        if changes:
+            AuditService.update(
+                actor=self.request.user,
+                instance=instance,
+                request=self.request,
+                changes=changes,
+            )
+
+    def perform_destroy(self, instance):
+        AuditService.delete(
+            actor=self.request.user,
+            instance=instance,
+            request=self.request,
+        )
+
+        instance.delete()
+
     pagination_class = None

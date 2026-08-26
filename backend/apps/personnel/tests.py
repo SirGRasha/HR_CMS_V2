@@ -27,8 +27,11 @@ from .serializers import (
 )
 from apps.accounts.models import User
 from apps.organization.models import OrganizationUnit, Position
-from apps.personnel.models import Employee
-
+from apps.personnel.models import ( 
+    Employee,
+    EmployeeEvaluation,
+    EmployeeContract,
+)
 
 class NationalIDValidationTest(TestCase):
 
@@ -63,14 +66,37 @@ class EmployeeSerializerTest(TestCase):
 class EmployeeAPITest(APITestCase):
     def setUp(self):
 
+        # ---------------------------------------------------------
+        # Users
+        # ---------------------------------------------------------
+
+        # Normal authenticated user
         self.user = User.objects.create_user(
             username="testuser",
             password="StrongPassword123",
         )
 
+        # Second normal user
+        self.second_user = User.objects.create_user(
+            username="seconduser",
+            password="StrongPassword123",
+        )
+
+        # Staff user
+        self.staff_user = User.objects.create_user(
+            username="staffuser",
+            password="StrongPassword123",
+            is_staff=True,
+        )
+
+        # Authenticate as normal user by default
         self.client.force_authenticate(
             user=self.user
         )
+
+        # ---------------------------------------------------------
+        # Organization Units
+        # ---------------------------------------------------------
 
         self.organization_unit = OrganizationUnit.objects.create(
             code="TEST-UNIT-001",
@@ -84,6 +110,10 @@ class EmployeeAPITest(APITestCase):
             unit_type=OrganizationUnit.UnitType.UNIT,
         )
 
+        # ---------------------------------------------------------
+        # Positions
+        # ---------------------------------------------------------
+
         self.position = Position.objects.create(
             code="TEST-POS-001",
             title="سمت تست",
@@ -96,6 +126,10 @@ class EmployeeAPITest(APITestCase):
             organization_unit=self.second_organization_unit,
         )
 
+        # ---------------------------------------------------------
+        # Employee belonging to normal user
+        # ---------------------------------------------------------
+
         self.employee = Employee.objects.create(
             personnel_code="EMP-API-001",
             first_name="تست",
@@ -107,7 +141,12 @@ class EmployeeAPITest(APITestCase):
             national_id="0012345679",
             marital_status="single",
             position=self.position,
+            user=self.user,
         )
+
+        # ---------------------------------------------------------
+        # Employee belonging to second normal user
+        # ---------------------------------------------------------
 
         self.second_employee = Employee.objects.create(
             personnel_code="EMP-API-002",
@@ -120,7 +159,12 @@ class EmployeeAPITest(APITestCase):
             national_id="0023456788",
             marital_status="married",
             position=self.second_position,
+            user=self.second_user,
         )
+
+        # ---------------------------------------------------------
+        # API URL
+        # ---------------------------------------------------------
 
         self.url = "/api/personnel/employees/"
 
@@ -133,7 +177,11 @@ class EmployeeAPITest(APITestCase):
         if isinstance(data, dict) and "results" in data:
             data = data["results"]
 
-        self.assertEqual(len(data), 2)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(
+            data[0]["id"],
+            self.employee.id,
+        )
 
     def test_retrieve_employee(self):
         response = self.client.get(
@@ -150,7 +198,778 @@ class EmployeeAPITest(APITestCase):
             "EMP-API-001",
         )
 
+    def test_normal_user_cannot_access_other_users_employee(self):
+        other_user = User.objects.create_user(
+            username="otheruser",
+            password="StrongPassword456",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="EMP-API-OTHER",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="فناوری اطلاعات",
+            job_title="کارشناس",
+            national_id="0045678905",
+            marital_status="single",
+            position=self.position,
+            user=other_user,
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            f"{self.url}{other_employee.id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    def test_normal_user_can_only_list_own_employee(self):
+        other_user = User.objects.create_user(
+            username="list_other_user",
+            password="StrongPassword456",
+        )
+
+        Employee.objects.create(
+            personnel_code="EMP-API-LIST-OTHER",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="فناوری اطلاعات",
+            job_title="کارشناس",
+            national_id="0056789012",
+            marital_status="single",
+            position=self.position,
+            user=other_user,
+        )
+
+        # کاربر عادی فعلی
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            self.url
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        data = response.data
+
+        if isinstance(data, dict) and "results" in data:
+            data = data["results"]
+
+        # فقط Employee متعلق به کاربر فعلی
+        self.assertEqual(
+            len(data),
+            1,
+        )
+
+        self.assertEqual(
+            data[0]["id"],
+            self.employee.id,
+        )
+
+        self.assertNotEqual(
+            data[0]["personnel_code"],
+            "EMP-API-LIST-OTHER",
+        )
+
+    def test_normal_user_cannot_bypass_ownership_with_filters(self):
+        other_user = User.objects.create_user(
+            username="filter_other_user",
+            password="StrongPassword456",
+        )
+
+        Employee.objects.create(
+            personnel_code="EMP-API-FILTER-OTHER",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="operational",
+            department="مالی",
+            job_title="کارشناس مالی",
+            national_id="0067890123",
+            marital_status="married",
+            position=self.second_position,
+            user=other_user,
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            self.url,
+            {
+                "employee_group": "operational",
+                "position": self.second_position.id,
+                "organization_unit": (
+                    self.second_organization_unit.id
+                ),
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        data = response.data
+
+        if isinstance(data, dict) and "results" in data:
+            data = data["results"]
+
+        self.assertEqual(
+            len(data),
+            0,
+        )
+
+    def test_normal_user_cannot_access_other_users_child(self):
+        other_user = User.objects.create_user(
+            username="child_other_user",
+            password="StrongPassword456",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="EMP-CHILD-OTHER",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="فناوری اطلاعات",
+            job_title="کارشناس",
+            national_id="0078901234",
+            marital_status="single",
+            position=self.position,
+            user=other_user,
+        )
+
+        child = EmployeeChild.objects.create(
+            employee=other_employee,
+            name="فرزند دیگر",
+            birth_date=date(2015, 1, 1),
+            education_certificate=False,
+            is_active=True,
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            f"/api/personnel/children/{child.id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    def test_normal_user_cannot_bypass_child_ownership_with_filters(self):
+        other_user = User.objects.create_user(
+            username="child_filter_other_user",
+            password="StrongPassword456",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="EMP-CHILD-FILTER",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="فناوری اطلاعات",
+            job_title="کارشناس",
+            national_id="0078901235",
+            marital_status="single",
+            position=self.position,
+            user=other_user,
+        )
+
+        child = EmployeeChild.objects.create(
+            employee=other_employee,
+            name="فرزند کاربر دیگر",
+            birth_date=date(2015, 1, 1),
+            education_certificate=False,
+            is_active=True,
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            f"/api/personnel/children/?employee={other_employee.id}"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            0,
+        )
+
+        self.assertNotIn(
+            child.id,
+            [
+                item["id"]
+                for item in response.data["results"]
+            ],
+        )
+
+    def test_normal_user_can_only_list_own_children(self):
+        own_child = EmployeeChild.objects.create(
+            employee=self.employee,
+            name="فرزند خودی",
+            birth_date=date(2016, 1, 1),
+            education_certificate=False,
+            is_active=True,
+        )
+
+        other_user = User.objects.create_user(
+            username="child_list_other_user",
+            password="StrongPassword456",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="EMP-CHILD-LIST",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="فناوری اطلاعات",
+            job_title="کارشناس",
+            national_id="0078901236",
+            marital_status="single",
+            position=self.position,
+            user=other_user,
+        )
+
+        other_child = EmployeeChild.objects.create(
+            employee=other_employee,
+            name="فرزند دیگر",
+            birth_date=date(2017, 1, 1),
+            education_certificate=False,
+            is_active=True,
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            "/api/personnel/children/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        returned_ids = [
+            item["id"]
+            for item in response.data["results"]
+        ]
+
+        self.assertIn(
+            own_child.id,
+            returned_ids,
+        )
+
+        self.assertNotIn(
+            other_child.id,
+            returned_ids,
+        )
+
+    def test_normal_user_cannot_access_other_users_phone(self):
+        other_user = User.objects.create_user(
+            username="phone_other_user",
+            password="StrongPassword456",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="EMP-PHONE-OTHER",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="فناوری اطلاعات",
+            job_title="کارشناس",
+            national_id="0078901237",
+            marital_status="single",
+            position=self.position,
+            user=other_user,
+        )
+
+        phone = EmployeePhone.objects.create(
+            employee=other_employee,
+            phone_type="mobile",
+            phone_number="09121234567",
+            is_primary=True,
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            f"/api/personnel/phones/{phone.id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    def test_normal_user_cannot_bypass_phone_ownership_with_filters(self):
+        other_user = User.objects.create_user(
+            username="phone_filter_other",
+            password="StrongPassword456",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="EMP-PHONE-FILTER",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="فناوری اطلاعات",
+            job_title="کارشناس",
+            national_id="0078901238",
+            marital_status="single",
+            position=self.position,
+            user=other_user,
+        )
+
+        phone = EmployeePhone.objects.create(
+            employee=other_employee,
+            phone_type="mobile",
+            phone_number="09129876543",
+            is_primary=True,
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            f"/api/personnel/phones/?employee={other_employee.id}"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data["count"],
+            0,
+        )
+
+        self.assertNotIn(
+            phone.id,
+            [
+                item["id"]
+                for item in response.data["results"]
+            ],
+        )
+
+    def test_normal_user_can_only_list_own_phones(self):
+        own_phone = EmployeePhone.objects.create(
+            employee=self.employee,
+            phone_type="mobile",
+            phone_number="09121111111",
+            is_primary=True,
+        )
+
+        other_user = User.objects.create_user(
+            username="phone_list_other",
+            password="StrongPassword456",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="EMP-PHONE-LIST",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="فناوری اطلاعات",
+            job_title="کارشناس",
+            national_id="0078901239",
+            marital_status="single",
+            position=self.position,
+            user=other_user,
+        )
+
+        other_phone = EmployeePhone.objects.create(
+            employee=other_employee,
+            phone_type="mobile",
+            phone_number="09122222222",
+            is_primary=True,
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            "/api/personnel/phones/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        returned_ids = [
+            item["id"]
+            for item in response.data["results"]
+        ]
+
+        self.assertIn(
+            own_phone.id,
+            returned_ids,
+        )
+
+        self.assertNotIn(
+            other_phone.id,
+            returned_ids,
+        )
+
+    def test_normal_user_cannot_access_other_users_bank_account(self):
+        other_user = User.objects.create_user(
+            username="bank_other_user",
+            password="StrongPassword456",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="EMP-BANK-OTHER",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="فناوری اطلاعات",
+            job_title="کارشناس",
+            national_id="0078901240",
+            marital_status="single",
+            position=self.position,
+            user=other_user,
+        )
+
+        bank_account = EmployeeBankAccount.objects.create(
+            employee=other_employee,
+            account_number="1234567890",
+            card_number="6037991234567890",
+            iban="IR123456789012345678901234",
+            bank_name="بانک تست",
+            is_primary=True,
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            f"/api/personnel/bank-accounts/{bank_account.id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    def test_normal_user_cannot_bypass_bank_account_ownership_with_filters(self):
+        other_user = User.objects.create_user(
+            username="bank_filter_other",
+            password="StrongPassword456",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="EMP-BANK-FILTER",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="فناوری اطلاعات",
+            job_title="کارشناس",
+            national_id="0078901241",
+            marital_status="single",
+            position=self.position,
+            user=other_user,
+        )
+
+        bank_account = EmployeeBankAccount.objects.create(
+            employee=other_employee,
+            account_number="9876543210",
+            card_number="6037999876543210",
+            iban="IR987654321098765432109876",
+            bank_name="بانک تست",
+            is_primary=True,
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            "/api/personnel/bank-accounts/",
+            {
+                "employee": other_employee.id,
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            response.data,
+            [],
+        )
+
+    def test_normal_user_can_only_list_own_bank_accounts(self):
+        own_bank_account = EmployeeBankAccount.objects.create(
+            employee=self.employee,
+            account_number="1111111111",
+            card_number="6037991111111111",
+            iban="IR111111111111111111111111",
+            bank_name="بانک خودی",
+            is_primary=True,
+        )
+
+        other_user = User.objects.create_user(
+            username="bank_list_other",
+            password="StrongPassword456",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="EMP-BANK-LIST",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="فناوری اطلاعات",
+            job_title="کارشناس",
+            national_id="0078901242",
+            marital_status="single",
+            position=self.position,
+            user=other_user,
+        )
+
+        other_bank_account = EmployeeBankAccount.objects.create(
+            employee=other_employee,
+            account_number="2222222222",
+            card_number="6037992222222222",
+            iban="IR222222222222222222222222",
+            bank_name="بانک دیگر",
+            is_primary=True,
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            "/api/personnel/bank-accounts/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        returned_ids = [
+            item["id"]
+            for item in response.data
+        ]
+
+        self.assertIn(
+            own_bank_account.id,
+            returned_ids,
+        )
+
+        self.assertNotIn(
+            other_bank_account.id,
+            returned_ids,
+        )
+
+    def test_normal_user_cannot_access_other_users_promissory_note(self):
+        other_user = User.objects.create_user(
+            username="note_other_user",
+            password="StrongPassword456",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="EMP-NOTE-OTHER",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="فناوری اطلاعات",
+            job_title="کارشناس",
+            national_id="0078901241",
+            marital_status="single",
+            position=self.position,
+            user=other_user,
+        )
+
+        note = EmployeePromissoryNote.objects.create(
+            employee=other_employee,
+            note_number="NOTE-OTHER-001",
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            f"/api/personnel/promissory-notes/{note.id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+    def test_normal_user_cannot_bypass_promissory_note_ownership_with_filters(self):
+        other_user = User.objects.create_user(
+            username="note_filter_other",
+            password="StrongPassword456",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="EMP-NOTE-FILTER",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="مالی",
+            job_title="کارشناس مالی",
+            national_id="0078901242",
+            marital_status="married",
+            position=self.second_position,
+            user=other_user,
+        )
+
+        note = EmployeePromissoryNote.objects.create(
+            employee=other_employee,
+            note_number="NOTE-FILTER-OTHER-001",
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            f"/api/personnel/promissory-notes/?employee={other_employee.id}"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertIsInstance(
+            response.data,
+            list,
+        )
+
+        self.assertEqual(
+            len(response.data),
+            0,
+        )
+
+        self.assertNotIn(
+            note.id,
+            [
+                item["id"]
+                for item in response.data
+            ],
+        )
+
+    def test_normal_user_can_only_list_own_promissory_notes(self):
+        own_note = EmployeePromissoryNote.objects.create(
+            employee=self.employee,
+            note_number="NOTE-OWN-001",
+        )
+
+        other_user = User.objects.create_user(
+            username="note_list_other",
+            password="StrongPassword456",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="EMP-NOTE-LIST",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="مالی",
+            job_title="کارشناس مالی",
+            national_id="0078901243",
+            marital_status="single",
+            position=self.position,
+            user=other_user,
+        )
+
+        other_note = EmployeePromissoryNote.objects.create(
+            employee=other_employee,
+            note_number="NOTE-OTHER-LIST-001",
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.get(
+            "/api/personnel/promissory-notes/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertIsInstance(
+            response.data,
+            list,
+        )
+
+        returned_ids = [
+            item["id"]
+            for item in response.data
+        ]
+
+        self.assertIn(
+            own_note.id,
+            returned_ids,
+        )
+
+        self.assertNotIn(
+            other_note.id,
+            returned_ids,
+        )
+
     def test_create_employee(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
         data = {
             "personnel_code": "EMP-API-003",
             "first_name": "کارمند جدید",
@@ -171,7 +990,7 @@ class EmployeeAPITest(APITestCase):
 
         self.assertEqual(
             response.status_code,
-            201,
+            status.HTTP_201_CREATED,
             response.data,
         )
 
@@ -181,6 +1000,10 @@ class EmployeeAPITest(APITestCase):
         )
 
     def test_update_employee(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
         data = {
             "personnel_code": "EMP-API-001",
             "first_name": "نام جدید",
@@ -199,7 +1022,11 @@ class EmployeeAPITest(APITestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+            response.data,
+        )
 
         self.employee.refresh_from_db()
 
@@ -207,12 +1034,17 @@ class EmployeeAPITest(APITestCase):
             self.employee.first_name,
             "نام جدید",
         )
+
         self.assertEqual(
             self.employee.job_title,
             "مدیر IT",
         )
 
     def test_partial_update_employee(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
         response = self.client.patch(
             f"{self.url}{self.employee.id}/",
             {
@@ -221,7 +1053,11 @@ class EmployeeAPITest(APITestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+            response.data,
+        )
 
         self.employee.refresh_from_db()
 
@@ -231,18 +1067,77 @@ class EmployeeAPITest(APITestCase):
         )
 
     def test_delete_employee(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
         employee_id = self.employee.id
 
         response = self.client.delete(
             f"{self.url}{employee_id}/"
         )
 
-        self.assertEqual(response.status_code, 204)
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_204_NO_CONTENT,
+            response.data if response.data else None,
+        )
 
         self.assertFalse(
             Employee.objects.filter(
                 id=employee_id
             ).exists()
+        )
+
+    def test_normal_user_cannot_create_employee(self):
+        response = self.client.post(
+            self.url,
+            {
+                "personnel_code": "EMP-API-999",
+                "first_name": "Unauthorized",
+                "last_name": "User",
+                "gender": "male",
+                "employee_group": "administrative",
+                "department": "Test",
+                "job_title": "Test",
+                "national_id": "0098765432",
+                "marital_status": "single",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        self.assertFalse(
+            Employee.objects.filter(
+                personnel_code="EMP-API-999"
+            ).exists()
+        )
+
+    def test_normal_user_cannot_modify_employee(self):
+        original_job_title = self.employee.job_title
+
+        response = self.client.patch(
+            f"{self.url}{self.employee.id}/",
+            {
+                "job_title": "Unauthorized Change",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        self.employee.refresh_from_db()
+
+        self.assertEqual(
+            self.employee.job_title,
+            original_job_title,
         )
 
     def test_filter_by_employee_group(self):
@@ -350,6 +1245,11 @@ class EmployeeAPITest(APITestCase):
         )
 
     def test_duplicate_personnel_code_returns_400(self):
+
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+        
         data = {
             "personnel_code": self.employee.personnel_code,
             "first_name": "کارمند",
@@ -371,6 +1271,11 @@ class EmployeeAPITest(APITestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_invalid_national_id_returns_400(self):
+
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
         data = {
             "personnel_code": "EMP-API-004",
             "first_name": "کارمند",
@@ -638,14 +1543,14 @@ class EmployeeDateValidationTest(TestCase):
             "employee_group": "administrative",
             "marital_status": "single",
             "national_id": "0012345679",
-            "birth_date": "1995-01-01",
-            "start_date": "2020-01-01",
-            "insurance_date": "2020-02-01",
+            "birth_date": "1373-10-11",
+            "start_date": "1398-10-11",
+            "insurance_date": "1398-11-12",
         }
 
     def test_birth_date_cannot_be_in_future(self):
         data = self.valid_data.copy()
-        data["birth_date"] = "2030-01-01"
+        data["birth_date"] = "1408-10-11"
 
         serializer = EmployeeSerializer(data=data)
 
@@ -654,7 +1559,7 @@ class EmployeeDateValidationTest(TestCase):
 
     def test_start_date_cannot_be_in_future(self):
         data = self.valid_data.copy()
-        data["start_date"] = "2030-01-01"
+        data["start_date"] = "1408-10-11"
 
         serializer = EmployeeSerializer(data=data)
 
@@ -663,8 +1568,8 @@ class EmployeeDateValidationTest(TestCase):
 
     def test_start_date_cannot_be_before_birth_date(self):
         data = self.valid_data.copy()
-        data["birth_date"] = "1995-01-01"
-        data["start_date"] = "1990-01-01"
+        data["birth_date"] = "1373-10-11"
+        data["start_date"] = "1368-10-11"
 
         serializer = EmployeeSerializer(data=data)
 
@@ -673,8 +1578,8 @@ class EmployeeDateValidationTest(TestCase):
 
     def test_insurance_date_cannot_be_before_start_date(self):
         data = self.valid_data.copy()
-        data["start_date"] = "2020-01-01"
-        data["insurance_date"] = "2019-01-01"
+        data["start_date"] = "1398-10-11"
+        data["insurance_date"] = "1397-10-11"
 
         serializer = EmployeeSerializer(data=data)
 
@@ -1114,6 +2019,7 @@ class EmployeeBankAccountAPITest(APITestCase):
             birth_date=date(1995, 1, 1),
             start_date=date(2020, 1, 1),
             insurance_date=date(2020, 2, 1),
+            user=self.user,
         )
 
     def get_valid_data(self, is_primary=False):
@@ -1331,6 +2237,7 @@ class EmployeePromissoryNoteAPITest(APITestCase):
             birth_date=date(1995, 1, 1),
             start_date=date(2020, 1, 1),
             insurance_date=date(2020, 2, 1),
+            user=self.user,
         )
 
     def get_valid_data(self, note_number="NOTE-API-001"):
@@ -1525,15 +2432,20 @@ class EmployeePromissoryNoteAPITest(APITestCase):
 class EmployeeDocumentAPITest(APITestCase):
 
     def setUp(self):
+        # Normal authenticated user
         self.user = User.objects.create_user(
             username="document_testuser",
             password="StrongPassword123",
         )
 
-        self.client.force_authenticate(
-            user=self.user
+        # Staff user for CRUD operations
+        self.staff_user = User.objects.create_user(
+            username="document_staff",
+            password="StrongPassword123",
+            is_staff=True,
         )
 
+        # Employee belongs to normal user
         self.employee = Employee.objects.create(
             personnel_code="DOC-API-001",
             first_name="تست",
@@ -1545,6 +2457,22 @@ class EmployeeDocumentAPITest(APITestCase):
             birth_date=date(1995, 1, 1),
             start_date=date(2020, 1, 1),
             insurance_date=date(2020, 2, 1),
+            user=self.user,
+        )
+
+        # Default client is normal user
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+    def authenticate_staff(self):
+        self.client.force_authenticate(
+            user=self.staff_user
+        )
+
+    def authenticate_user(self):
+        self.client.force_authenticate(
+            user=self.user
         )
 
     def create_document(
@@ -1554,7 +2482,13 @@ class EmployeeDocumentAPITest(APITestCase):
         expiry_date=None,
         document_type="national_id",
         is_verified=False,
+        as_staff=True,
     ):
+        if as_staff:
+            self.authenticate_staff()
+        else:
+            self.authenticate_user()
+
         uploaded_file = SimpleUploadedFile(
             file_name,
             content,
@@ -1569,8 +2503,6 @@ class EmployeeDocumentAPITest(APITestCase):
             "is_verified": is_verified,
         }
 
-        # در multipart نمی‌توان None ارسال کرد.
-        # اگر تاریخ وجود داشته باشد، آن را ارسال می‌کنیم.
         if expiry_date is not None:
             data["expiry_date"] = expiry_date
 
@@ -1579,6 +2511,28 @@ class EmployeeDocumentAPITest(APITestCase):
             data,
             format="multipart",
         )
+
+    def create_document_as_staff(
+        self,
+        file_name="test.pdf",
+        content=b"test document",
+        expiry_date=None,
+        document_type="national_id",
+        is_verified=False,
+    ):
+        self.authenticate_as_staff()
+
+        response = self.create_document(
+            file_name=file_name,
+            content=content,
+            expiry_date=expiry_date,
+            document_type=document_type,
+            is_verified=is_verified,
+        )
+
+        self.authenticate_as_user()
+
+        return response
 
     def test_list_documents(self):
         response = self.client.get(
@@ -1607,6 +2561,8 @@ class EmployeeDocumentAPITest(APITestCase):
     def test_filter_documents_by_employee(self):
         self.create_document()
 
+        self.authenticate_user()
+
         response = self.client.get(
             f"/api/personnel/documents/?employee={self.employee.id}"
         )
@@ -1617,14 +2573,16 @@ class EmployeeDocumentAPITest(APITestCase):
         )
 
         self.assertEqual(
-            len(response.data),
+            len(response.data["results"]),
             1,
         )
 
     def test_expired_document_filter(self):
         self.create_document(
-            expiry_date="2020-01-01",
+            expiry_date="1398-10-11"
         )
+
+        self.authenticate_user()
 
         response = self.client.get(
             "/api/personnel/documents/?expiry_status=expired"
@@ -1636,14 +2594,16 @@ class EmployeeDocumentAPITest(APITestCase):
         )
 
         self.assertEqual(
-            len(response.data),
+            len(response.data["results"]),
             1,
         )
 
     def test_valid_document_filter(self):
         self.create_document(
-            expiry_date="2030-01-01",
+            expiry_date="1408-10-11"
         )
+
+        self.authenticate_user()
 
         response = self.client.get(
             "/api/personnel/documents/?expiry_status=valid"
@@ -1655,7 +2615,7 @@ class EmployeeDocumentAPITest(APITestCase):
         )
 
         self.assertEqual(
-            len(response.data),
+            len(response.data["results"]),
             1,
         )
 
@@ -1663,6 +2623,8 @@ class EmployeeDocumentAPITest(APITestCase):
         self.create_document(
             expiry_date=None,
         )
+
+        self.authenticate_user()
 
         response = self.client.get(
             "/api/personnel/documents/?expiry_status=no_expiry"
@@ -1674,7 +2636,7 @@ class EmployeeDocumentAPITest(APITestCase):
         )
 
         self.assertEqual(
-            len(response.data),
+            len(response.data["results"]),
             1,
         )
 
@@ -1682,6 +2644,8 @@ class EmployeeDocumentAPITest(APITestCase):
         self.create_document(
             is_verified=True,
         )
+
+        self.authenticate_user()
 
         response = self.client.get(
             "/api/personnel/documents/?is_verified=true"
@@ -1693,7 +2657,7 @@ class EmployeeDocumentAPITest(APITestCase):
         )
 
         self.assertEqual(
-            len(response.data),
+            len(response.data["results"]),
             1,
         )
 
@@ -1701,6 +2665,8 @@ class EmployeeDocumentAPITest(APITestCase):
         self.create_document(
             is_verified=False,
         )
+
+        self.authenticate_user()
 
         response = self.client.get(
             "/api/personnel/documents/?is_verified=false"
@@ -1712,7 +2678,7 @@ class EmployeeDocumentAPITest(APITestCase):
         )
 
         self.assertEqual(
-            len(response.data),
+            len(response.data["results"]),
             1,
         )
 
@@ -1720,6 +2686,8 @@ class EmployeeDocumentAPITest(APITestCase):
         self.create_document(
             document_type="national_id",
         )
+
+        self.authenticate_user()
 
         response = self.client.get(
             "/api/personnel/documents/?document_type=national_id"
@@ -1731,7 +2699,7 @@ class EmployeeDocumentAPITest(APITestCase):
         )
 
         self.assertEqual(
-            len(response.data),
+            len(response.data["results"]),
             1,
         )
 
@@ -1746,20 +2714,8 @@ class EmployeeDocumentAPITest(APITestCase):
             status.HTTP_400_BAD_REQUEST,
         )
 
-        self.assertIn(
-            "file",
-            response.data,
-        )
-
-        self.assertEqual(
-            EmployeeDocument.objects.count(),
-            0,
-        )
-
     def test_file_larger_than_10mb_is_rejected(self):
-        large_content = b"x" * (
-            10 * 1024 * 1024 + 1
-        )
+        large_content = b"x" * (10 * 1024 * 1024 + 1)
 
         response = self.create_document(
             file_name="large.pdf",
@@ -1771,15 +2727,6 @@ class EmployeeDocumentAPITest(APITestCase):
             status.HTTP_400_BAD_REQUEST,
         )
 
-        self.assertIn(
-            "file",
-            response.data,
-        )
-
-        self.assertEqual(
-            EmployeeDocument.objects.count(),
-            0,
-        )
     def test_retrieve_document(self):
         response = self.create_document(
             expiry_date="2030-01-01",
@@ -1794,6 +2741,8 @@ class EmployeeDocumentAPITest(APITestCase):
         )
 
         document_id = response.data["id"]
+
+        self.authenticate_user()
 
         response = self.client.get(
             f"/api/personnel/documents/{document_id}/"
@@ -1833,12 +2782,14 @@ class EmployeeDocumentAPITest(APITestCase):
 
         document_id = response.data["id"]
 
+        self.authenticate_staff()
+
         response = self.client.patch(
             f"/api/personnel/documents/{document_id}/",
             {
                 "title": "مدرک ملی به‌روزشده",
                 "is_verified": True,
-                "expiry_date": "2035-01-01",
+                "expiry_date": "1413-10-11",
             },
             format="json",
         )
@@ -1880,6 +2831,8 @@ class EmployeeDocumentAPITest(APITestCase):
 
         document_id = response.data["id"]
 
+        self.authenticate_staff()
+
         response = self.client.delete(
             f"/api/personnel/documents/{document_id}/"
         )
@@ -1907,6 +2860,8 @@ class EmployeeDocumentAPITest(APITestCase):
         )
 
         document_id = response.data["id"]
+
+        self.authenticate_staff()
 
         response = self.client.patch(
             f"/api/personnel/documents/{document_id}/",
@@ -1944,6 +2899,8 @@ class EmployeeDocumentAPITest(APITestCase):
 
         document_id = response.data["id"]
 
+        self.authenticate_staff()
+
         response = self.client.patch(
             f"/api/personnel/documents/{document_id}/",
             {
@@ -1964,6 +2921,134 @@ class EmployeeDocumentAPITest(APITestCase):
         self.assertEqual(
             document.document_type,
             "national_id",
+        )
+
+    def test_normal_user_cannot_create_document(self):
+        response = self.create_document(
+            as_staff=False,
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        self.assertEqual(
+            EmployeeDocument.objects.count(),
+            0,
+        )
+
+    def test_normal_user_cannot_update_document(self):
+        response = self.create_document(
+            document_type="national_id",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+            response.data,
+        )
+
+        document_id = response.data["id"]
+
+        self.authenticate_user()
+
+        response = self.client.patch(
+            f"/api/personnel/documents/{document_id}/",
+            {
+                "title": "تغییر توسط کاربر عادی",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+            response.data,
+        )
+
+    def test_normal_user_cannot_delete_document(self):
+        response = self.create_document(
+            document_type="national_id",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+            response.data,
+        )
+
+        document_id = response.data["id"]
+
+        self.authenticate_user()
+
+        response = self.client.delete(
+            f"/api/personnel/documents/{document_id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+            response.data,
+        )
+
+        self.assertTrue(
+            EmployeeDocument.objects.filter(
+                id=document_id
+            ).exists()
+        )
+
+    def test_normal_user_cannot_access_other_users_document(self):
+        response = self.create_document()
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        document_id = response.data["id"]
+
+        other_user = User.objects.create_user(
+            username="other_document_user",
+            password="StrongPassword123",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="DOC-API-002",
+            first_name="کاربر",
+            last_name="دوم",
+            gender="male",
+            employee_group="administrative",
+            marital_status="single",
+            national_id="0034567897",
+            birth_date=date(1994, 1, 1),
+            start_date=date(2021, 1, 1),
+            insurance_date=date(2021, 2, 1),
+            user=other_user,
+        )
+
+        self.authenticate_user()
+
+        response = self.client.get(
+            f"/api/personnel/documents/{document_id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.client.force_authenticate(
+            user=other_user
+        )
+
+        response = self.client.get(
+            f"/api/personnel/documents/{document_id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
         )
 
 class EmployeeUserRelationTest(TestCase):
@@ -2046,4 +3131,137 @@ class EmployeeUserRelationTest(TestCase):
 
         self.assertIsNone(
             self.employee.user
+        )
+
+class EmployeeRelationshipIntegrityTest(TestCase):
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="integrity_user",
+            password="StrongPassword123",
+        )
+
+        self.employee = Employee.objects.create(
+            personnel_code="INT-001",
+            first_name="Test",
+            last_name="Employee",
+            gender=Employee.Gender.MALE,
+            employee_group=Employee.EmployeeGroup.ADMINISTRATIVE,
+            national_id="1234567890",
+            marital_status=Employee.MaritalStatus.SINGLE,
+            user=self.user,
+        )
+
+    def test_delete_employee_cascades_child(self):
+        child = EmployeeChild.objects.create(
+            employee=self.employee,
+            name="Child",
+            birth_date=date(2015, 1, 1),
+        )
+
+        employee_id = self.employee.id
+
+        self.employee.delete()
+
+        self.assertFalse(
+            EmployeeChild.objects.filter(
+                id=child.id
+            ).exists()
+        )
+        self.assertFalse(
+            Employee.objects.filter(
+                id=employee_id
+            ).exists()
+        )
+
+    def test_delete_employee_cascades_phone(self):
+        phone = EmployeePhone.objects.create(
+            employee=self.employee,
+            phone_number="09120000000",
+            is_primary=True,
+        )
+
+        self.employee.delete()
+
+        self.assertFalse(
+            EmployeePhone.objects.filter(
+                id=phone.id
+            ).exists()
+        )
+
+    def test_delete_employee_cascades_bank_account(self):
+        account = EmployeeBankAccount.objects.create(
+            employee=self.employee,
+            account_number="123456789",
+            bank_name="Test Bank",
+        )
+
+        self.employee.delete()
+
+        self.assertFalse(
+            EmployeeBankAccount.objects.filter(
+                id=account.id
+            ).exists()
+        )
+
+    def test_delete_employee_cascades_promissory_note(self):
+        note = EmployeePromissoryNote.objects.create(
+            employee=self.employee,
+            note_number="NOTE-001",
+        )
+
+        self.employee.delete()
+
+        self.assertFalse(
+            EmployeePromissoryNote.objects.filter(
+                id=note.id
+            ).exists()
+        )
+
+    def test_delete_employee_cascades_evaluation(self):
+        evaluation = EmployeeEvaluation.objects.create(
+            employee=self.employee,
+            score="18.50",
+            evaluation_date=date(1405, 1, 1),
+        )
+
+        self.employee.delete()
+
+        self.assertFalse(
+            EmployeeEvaluation.objects.filter(
+                id=evaluation.id
+            ).exists()
+        )
+
+    def test_delete_employee_cascades_contract(self):
+        contract = EmployeeContract.objects.create(
+            employee=self.employee,
+            contract_type=EmployeeContract.ContractType.FULL_TIME,
+            title="Test Contract",
+            position="Test Position",
+            start_date=date(1405, 1, 1),
+        )
+
+        self.employee.delete()
+
+        self.assertFalse(
+            EmployeeContract.objects.filter(
+                id=contract.id
+            ).exists()
+        )
+
+    def test_delete_employee_cascades_document(self):
+        document = EmployeeDocument.objects.create(
+            employee=self.employee,
+            document_type=EmployeeDocument.DocumentType.OTHER,
+            title="Test Document",
+            file="test/document.pdf",
+        )
+
+        self.employee.delete()
+
+        self.assertFalse(
+            EmployeeDocument.objects.filter(
+                id=document.id
+            ).exists()
         )

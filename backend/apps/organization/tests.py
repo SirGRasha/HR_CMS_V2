@@ -3,6 +3,7 @@ from django.db.models.deletion import ProtectedError
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
+from apps.audit.models import AuditLog
 
 from apps.accounts.models import User
 from apps.organization.models import OrganizationUnit, Position
@@ -111,7 +112,6 @@ class OrganizationUnitTest(TestCase):
 
         with self.assertRaises(ProtectedError):
             parent.delete()
-
 
 class PositionTest(TestCase):
 
@@ -247,6 +247,92 @@ class OrganizationUnitSerializerTest(TestCase):
         self.assertIn("created_at", serializer.fields)
         self.assertIn("updated_at", serializer.fields)
 
+    def test_serializer_rejects_self_parent(self):
+        unit = OrganizationUnit.objects.create(
+            code="UNIT",
+            name="Unit",
+            unit_type=OrganizationUnit.UnitType.UNIT,
+        )
+
+        serializer = OrganizationUnitSerializer(
+            instance=unit,
+            data={
+                "code": unit.code,
+                "name": unit.name,
+                "unit_type": unit.unit_type,
+                "parent": unit.id,
+                "is_active": unit.is_active,
+                "description": unit.description,
+            },
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("parent", serializer.errors)
+
+    def test_serializer_rejects_direct_cycle(self):
+        parent = OrganizationUnit.objects.create(
+            code="PARENT",
+            name="Parent",
+            unit_type=OrganizationUnit.UnitType.COMPANY,
+        )
+
+        child = OrganizationUnit.objects.create(
+            code="CHILD",
+            name="Child",
+            unit_type=OrganizationUnit.UnitType.UNIT,
+            parent=parent,
+        )
+
+        serializer = OrganizationUnitSerializer(
+            instance=parent,
+            data={
+                "code": parent.code,
+                "name": parent.name,
+                "unit_type": parent.unit_type,
+                "parent": child.id,
+                "is_active": parent.is_active,
+                "description": parent.description,
+            },
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("parent", serializer.errors)
+
+    def test_serializer_rejects_indirect_cycle(self):
+        root = OrganizationUnit.objects.create(
+            code="ROOT",
+            name="Root",
+            unit_type=OrganizationUnit.UnitType.COMPANY,
+        )
+
+        middle = OrganizationUnit.objects.create(
+            code="MIDDLE",
+            name="Middle",
+            unit_type=OrganizationUnit.UnitType.DEPARTMENT,
+            parent=root,
+        )
+
+        leaf = OrganizationUnit.objects.create(
+            code="LEAF",
+            name="Leaf",
+            unit_type=OrganizationUnit.UnitType.UNIT,
+            parent=middle,
+        )
+
+        serializer = OrganizationUnitSerializer(
+            instance=root,
+            data={
+                "code": root.code,
+                "name": root.name,
+                "unit_type": root.unit_type,
+                "parent": leaf.id,
+                "is_active": root.is_active,
+                "description": root.description,
+            },
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("parent", serializer.errors)
 
 class PositionSerializerTest(TestCase):
 
@@ -604,6 +690,153 @@ class OrganizationUnitAPITest(APITestCase):
             status.HTTP_403_FORBIDDEN,
         )
 
+    def test_create_unit_creates_audit_log(self):
+        response = self.client.post(
+            "/api/organization/units/",
+            {
+                "code": "AUDIT-UNIT",
+                "name": "Audit Unit",
+                "unit_type": OrganizationUnit.UnitType.UNIT,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+        )
+
+        audit = AuditLog.objects.filter(
+            app_label="organization",
+            model_name="organizationunit",
+            action=AuditLog.Action.CREATE,
+            object_id=str(response.data["id"]),
+        ).first()
+
+        self.assertIsNotNone(audit)
+        self.assertEqual(audit.actor, self.staff_user)
+
+    def test_update_unit_creates_audit_log(self):
+        unit = OrganizationUnit.objects.create(
+            code="AUDIT-UPD",
+            name="Old Name",
+            unit_type=OrganizationUnit.UnitType.UNIT,
+        )
+
+        response = self.client.patch(
+            f"/api/organization/units/{unit.id}/",
+            {
+                "name": "New Name",
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        audit = AuditLog.objects.filter(
+            app_label="organization",
+            model_name="organizationunit",
+            action=AuditLog.Action.UPDATE,
+            object_id=str(unit.id),
+        ).order_by("-id").first()
+
+        self.assertIsNotNone(audit)
+        self.assertEqual(audit.actor, self.staff_user)
+        self.assertEqual(
+            audit.changes["name"]["old"],
+            "Old Name",
+        )
+        self.assertEqual(
+            audit.changes["name"]["new"],
+            "New Name",
+        )
+
+    def test_delete_unit_creates_audit_log(self):
+        unit = OrganizationUnit.objects.create(
+            code="AUDIT-DEL",
+            name="Delete Unit",
+            unit_type=OrganizationUnit.UnitType.UNIT,
+        )
+
+        response = self.client.delete(
+            f"/api/organization/units/{unit.id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_204_NO_CONTENT,
+        )
+
+        audit = AuditLog.objects.filter(
+            app_label="organization",
+            model_name="organizationunit",
+            action=AuditLog.Action.DELETE,
+            object_id=str(unit.id),
+        ).first()
+
+        self.assertIsNotNone(audit)
+        self.assertEqual(audit.actor, self.staff_user)
+
+    def test_api_rejects_self_parent(self):
+        response = self.client.patch(
+            f"/api/organization/units/{self.unit.id}/",
+            {
+                "parent": self.unit.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertIn(
+            "parent",
+            response.data,
+        )
+
+    def test_api_rejects_indirect_parent_cycle(self):
+        root = OrganizationUnit.objects.create(
+            code="ROOT-CYCLE",
+            name="Root Cycle",
+            unit_type=OrganizationUnit.UnitType.COMPANY,
+        )
+
+        child = OrganizationUnit.objects.create(
+            code="CHILD-CYCLE",
+            name="Child Cycle",
+            unit_type=OrganizationUnit.UnitType.DEPARTMENT,
+            parent=root,
+        )
+
+        leaf = OrganizationUnit.objects.create(
+            code="LEAF-CYCLE",
+            name="Leaf Cycle",
+            unit_type=OrganizationUnit.UnitType.UNIT,
+            parent=child,
+        )
+
+        response = self.client.patch(
+            f"/api/organization/units/{root.id}/",
+            {
+                "parent": leaf.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertIn(
+            "parent",
+            response.data,
+        )
 
 class PositionAPITest(APITestCase):
 

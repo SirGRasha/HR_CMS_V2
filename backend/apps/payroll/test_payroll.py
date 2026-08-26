@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
+from unittest.mock import patch
 
 from apps.accounts.models import User
 from apps.personnel.models import Employee, EmployeeChild
@@ -894,6 +895,40 @@ class EmployeeSalaryAPITest(APITestCase):
         self.assertEqual(
             Decimal(response.data["net_salary"]),
             Decimal("38500000"),
+        )
+
+    @patch(
+        "apps.payroll.serializers.PayrollCalculator.calculate"
+    )
+    def test_salary_serializer_calculates_payroll_only_once(
+        self,
+        mock_calculate,
+    ):
+        salary = self.create_salary(
+            year=1405,
+            month=8,
+        )
+
+        mock_calculate.return_value = {
+            "eligible_children_count": 1,
+            "daily_wage": Decimal("1000000"),
+            "child_allowance_per_child": Decimal("3000000"),
+            "child_allowance": Decimal("3000000"),
+            "total_eligible_benefits": Decimal("45000000"),
+        }
+
+        response = self.client.get(
+            f"/api/payroll/salaries/{salary.id}/"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            mock_calculate.call_count,
+            1,
         )
 
 

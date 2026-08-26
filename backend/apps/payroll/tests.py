@@ -106,6 +106,89 @@ class ChildAllowanceTest(TestCase):
 
         self.assertFalse(result)
 
+    def test_child_exactly_18_without_certificate_is_not_eligible(self):
+        child = EmployeeChild.objects.create(
+            employee=self.employee,
+            name="فرزند دقیقاً ۱۸ ساله بدون گواهی",
+            birth_date=date(2008, 8, 14),
+            education_certificate=False,
+            is_active=True,
+        )
+
+        result = is_child_eligible(
+            child,
+            date(2026, 8, 14),
+        )
+
+        self.assertFalse(result)
+
+    def test_child_exactly_18_with_certificate_is_eligible(self):
+        child = EmployeeChild.objects.create(
+            employee=self.employee,
+            name="فرزند دقیقاً ۱۸ ساله با گواهی",
+            birth_date=date(2008, 8, 14),
+            education_certificate=True,
+            is_active=True,
+        )
+
+        result = is_child_eligible(
+            child,
+            date(2026, 8, 14),
+        )
+
+        self.assertTrue(result)
+
+    def test_child_one_day_before_18_is_eligible(self):
+        child = EmployeeChild.objects.create(
+            employee=self.employee,
+            name="فرزند یک روز مانده به ۱۸ سالگی",
+            birth_date=date(2008, 8, 15),
+            education_certificate=False,
+            is_active=True,
+        )
+
+        result = is_child_eligible(
+            child,
+            date(2026, 8, 14),
+        )
+
+        self.assertTrue(result)
+
+    def test_inactive_child_is_not_eligible_for_allowance(self):
+        child = EmployeeChild.objects.create(
+            employee=self.employee,
+            name="فرزند غیرفعال",
+            birth_date=date(2015, 1, 1),
+            education_certificate=False,
+            is_active=False,
+        )
+
+        result = calculate_child_allowance(
+            employee=self.employee,
+            reference_date=date(2026, 8, 14),
+            monthly_wage=Decimal("300000000"),
+        )
+
+        self.assertFalse(
+            is_child_eligible(
+                child,
+                date(2026, 8, 14),
+            )
+        )
+
+        self.assertNotIn(
+            child,
+            result["eligible_children"],
+        )
+
+    def test_future_birth_date_has_zero_age(self):
+        age = calculate_age(
+            date(2030, 1, 1),
+            date(2026, 8, 14),
+        )
+
+        self.assertEqual(age, 0)
+
     def test_child_allowance_calculation(self):
 
         EmployeeChild.objects.create(

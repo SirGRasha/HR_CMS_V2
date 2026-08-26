@@ -46,10 +46,20 @@ class EmployeeSalarySerializer(serializers.ModelSerializer):
         ]
 
     def _calculate(self, obj):
-        return PayrollCalculator.calculate(
-            obj.employee,
-            obj,
-        )
+        if not hasattr(self, "_payroll_calculation_cache"):
+            self._payroll_calculation_cache = {}
+
+        cache_key = obj.pk
+
+        if cache_key not in self._payroll_calculation_cache:
+            self._payroll_calculation_cache[cache_key] = (
+                PayrollCalculator.calculate(
+                    obj.employee,
+                    obj,
+                )
+            )
+
+        return self._payroll_calculation_cache[cache_key]
 
     def get_eligible_children_count(self, obj):
         return self._calculate(obj)["eligible_children_count"]

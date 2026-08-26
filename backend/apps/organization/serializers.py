@@ -24,6 +24,45 @@ class OrganizationUnitSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def validate(self, attrs):
+        parent = attrs.get("parent")
+
+        # No parent means this is a root unit.
+        if parent is None:
+            return attrs
+
+        instance = self.instance
+
+        # On update, a unit cannot be its own parent.
+        if instance and parent.pk == instance.pk:
+            raise serializers.ValidationError(
+                {
+                    "parent": (
+                        "An organization unit cannot "
+                        "be its own parent."
+                    )
+                }
+            )
+
+        # On update, prevent creating a cycle in the tree.
+        if instance:
+            current = parent
+
+            while current is not None:
+                if current.pk == instance.pk:
+                    raise serializers.ValidationError(
+                        {
+                            "parent": (
+                                "This parent would create "
+                                "a cycle in the organization tree."
+                            )
+                        }
+                    )
+
+                current = current.parent
+
+        return attrs
+
 
 class PositionSerializer(serializers.ModelSerializer):
 

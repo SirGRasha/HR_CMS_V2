@@ -7,6 +7,7 @@ from .models import EmployeeDocument
 from .models import EmployeePhone
 from .models import EmployeePromissoryNote
 from .models import EmployeeBankAccount
+from .permissions import PersonnelPermission
 
 from .serializers import EmployeeSerializer
 from .serializers import EmployeeChildSerializer
@@ -17,6 +18,10 @@ from .serializers import EmployeeBankAccountSerializer
 
 
 class EmployeeViewSet(viewsets.ModelViewSet):
+
+    permission_classes = [
+        PersonnelPermission,
+    ]
 
     queryset = (
         Employee.objects
@@ -35,6 +40,14 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+
+        if not (
+            self.request.user.is_staff
+            or self.request.user.is_superuser
+        ):
+            queryset = queryset.filter(
+                user=self.request.user
+            )
 
         position = self.request.query_params.get("position")
         organization_unit = self.request.query_params.get(
@@ -72,6 +85,10 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
 class EmployeeChildViewSet(viewsets.ModelViewSet):
 
+    permission_classes = [
+        PersonnelPermission,
+    ]
+
     queryset = EmployeeChild.objects.all().order_by(
         "employee",
         "birth_date",
@@ -79,7 +96,24 @@ class EmployeeChildViewSet(viewsets.ModelViewSet):
 
     serializer_class = EmployeeChildSerializer
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        if not (
+            self.request.user.is_staff
+            or self.request.user.is_superuser
+        ):
+            queryset = queryset.filter(
+                employee__user=self.request.user
+            )
+
+        return queryset
+
 class EmployeePhoneViewSet(viewsets.ModelViewSet):
+
+    permission_classes = [
+        PersonnelPermission,
+    ]
 
     queryset = EmployeePhone.objects.all().order_by(
         "employee",
@@ -92,6 +126,14 @@ class EmployeePhoneViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
 
+        if not (
+            self.request.user.is_staff
+            or self.request.user.is_superuser
+        ):
+            queryset = queryset.filter(
+                employee__user=self.request.user
+            )
+
         employee_id = self.request.query_params.get("employee")
 
         if employee_id:
@@ -102,6 +144,10 @@ class EmployeePhoneViewSet(viewsets.ModelViewSet):
         return queryset
 
 class EmployeeBankAccountViewSet(viewsets.ModelViewSet):
+
+    permission_classes = [
+        PersonnelPermission,
+    ]
 
     queryset = EmployeeBankAccount.objects.all().order_by(
         "employee",
@@ -114,6 +160,14 @@ class EmployeeBankAccountViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
 
+        if not (
+            self.request.user.is_staff
+            or self.request.user.is_superuser
+        ):
+            queryset = queryset.filter(
+                employee__user=self.request.user
+            )
+
         employee_id = self.request.query_params.get("employee")
 
         if employee_id:
@@ -122,9 +176,14 @@ class EmployeeBankAccountViewSet(viewsets.ModelViewSet):
             )
 
         return queryset
+
     pagination_class = None
 
 class EmployeePromissoryNoteViewSet(viewsets.ModelViewSet):
+
+    permission_classes = [
+        PersonnelPermission,
+    ]
 
     queryset = EmployeePromissoryNote.objects.all().order_by(
         "employee",
@@ -136,6 +195,14 @@ class EmployeePromissoryNoteViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
 
+        if not (
+            self.request.user.is_staff
+            or self.request.user.is_superuser
+        ):
+            queryset = queryset.filter(
+                employee__user=self.request.user
+            )
+
         employee_id = self.request.query_params.get("employee")
 
         if employee_id:
@@ -144,9 +211,14 @@ class EmployeePromissoryNoteViewSet(viewsets.ModelViewSet):
             )
 
         return queryset
+
     pagination_class = None
     
 class EmployeeDocumentViewSet(viewsets.ModelViewSet):
+
+    permission_classes = [
+        PersonnelPermission,
+    ]
 
     queryset = EmployeeDocument.objects.all().order_by(
         "-uploaded_at",
@@ -156,6 +228,14 @@ class EmployeeDocumentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+
+        if not (
+            self.request.user.is_staff
+            or self.request.user.is_superuser
+        ):
+            queryset = queryset.filter(
+                employee__user=self.request.user
+            )
 
         employee_id = self.request.query_params.get("employee")
         document_type = self.request.query_params.get("document_type")
@@ -197,6 +277,3 @@ class EmployeeDocumentViewSet(viewsets.ModelViewSet):
             )
 
         return queryset
-
-    serializer_class = EmployeeDocumentSerializer
-    pagination_class = None

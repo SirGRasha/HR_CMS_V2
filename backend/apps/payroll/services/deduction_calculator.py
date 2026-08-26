@@ -36,7 +36,7 @@ class DeductionCalculator:
         for deduction in salary.deductions.all():
 
             amount = Decimal(
-                deduction.amount
+                str(deduction.amount)
             )
 
             deductions[

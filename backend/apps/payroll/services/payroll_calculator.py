@@ -1,57 +1,22 @@
-﻿from datetime import date
-from decimal import Decimal
+﻿from decimal import Decimal
+
+from django.utils import timezone
+
+from apps.payroll.services.child_allowance import (
+    calculate_child_allowance,
+)
+from apps.payroll.services.deduction_calculator import (
+    DeductionCalculator,
+)
 
 
 class PayrollCalculator:
     """
-    موتور محاسبه حقوق و مزایای پرسنل.
+    موتور اصلی محاسبه حقوق و مزایای پرسنل.
+
+    این کلاس مسئول orchestration است و منطق جزئی
+    حق اولاد و کسورات را به سرویس‌های تخصصی واگذار می‌کند.
     """
-
-    @staticmethod
-    def calculate_employee_age(birth_date):
-        """
-        محاسبه سن دقیق بر اساس تاریخ میلادی ذخیره‌شده در دیتابیس.
-        """
-        if not birth_date:
-            return None
-
-        today = date.today()
-
-        age = today.year - birth_date.year
-
-        if (today.month, today.day) < (
-            birth_date.month,
-            birth_date.day,
-        ):
-            age -= 1
-
-        return age
-
-    @staticmethod
-    def is_child_eligible(child):
-        """
-        تعیین واجد شرایط بودن فرزند برای حق اولاد.
-
-        قوانین:
-        - زیر 18 سال: واجد شرایط
-        - 18 سال و بالاتر + گواهی اشتغال به تحصیل: واجد شرایط
-        - 18 سال و بالاتر بدون گواهی: غیرواجد شرایط
-        """
-
-        if not child.is_active:
-            return False
-
-        age = PayrollCalculator.calculate_employee_age(
-            child.birth_date
-        )
-
-        if age is None:
-            return False
-
-        if age < 18:
-            return True
-
-        return bool(child.education_certificate)
 
     @staticmethod
     def calculate(employee, salary):
@@ -59,45 +24,44 @@ class PayrollCalculator:
         محاسبه کامل حقوق، مزایا، کسورات و حقوق خالص.
         """
 
-        monthly_wage = Decimal(salary.monthly_wage)
+        monthly_wage = Decimal(
+            str(salary.monthly_wage)
+        )
+
         worker_food_allowance = Decimal(
-            salary.worker_food_allowance
+            str(salary.worker_food_allowance)
         )
+
         housing_allowance = Decimal(
-            salary.housing_allowance
+            str(salary.housing_allowance)
         )
+
         marriage_allowance = Decimal(
-            salary.marriage_allowance
+            str(salary.marriage_allowance)
         )
 
         # --------------------------------------------------
         # Child allowance
         # --------------------------------------------------
 
-        eligible_children_count = 0
-
-        children = employee.children.filter(
-            is_active=True
+        child_result = calculate_child_allowance(
+            employee=employee,
+            reference_date=timezone.localdate(),
+            monthly_wage=monthly_wage,
         )
 
-        for child in children:
-            if PayrollCalculator.is_child_eligible(child):
-                eligible_children_count += 1
-
-        # مزد روزانه بر مبنای 30 روز
-        daily_wage = (
-            monthly_wage / Decimal("30")
+        eligible_children_count = (
+            child_result["eligible_children_count"]
         )
 
-        # حق اولاد هر فرزند = 3 روز مزد
+        daily_wage = child_result["daily_wage"]
+
         child_allowance_per_child = (
-            daily_wage * Decimal("3")
+            child_result["allowance_per_child"]
         )
 
-        # حق اولاد کل
         child_allowance = (
-            child_allowance_per_child
-            * eligible_children_count
+            child_result["total_child_allowance"]
         )
 
         # --------------------------------------------------
@@ -118,28 +82,14 @@ class PayrollCalculator:
         # Deductions
         # --------------------------------------------------
 
-        deduction_totals = {
-            "insurance": Decimal("0"),
-            "tax": Decimal("0"),
-            "advance": Decimal("0"),
-            "loan": Decimal("0"),
-            "absence": Decimal("0"),
-            "other": Decimal("0"),
-        }
+        deduction_result = (
+            DeductionCalculator.calculate(salary)
+        )
 
-        deductions = salary.deductions.all()
+        deductions = deduction_result["deductions"]
 
-        for deduction in deductions:
-            deduction_type = deduction.deduction_type
-
-            if deduction_type in deduction_totals:
-                deduction_totals[deduction_type] += Decimal(
-                    deduction.amount
-                )
-
-        total_deductions = sum(
-            deduction_totals.values(),
-            Decimal("0"),
+        total_deductions = (
+            deduction_result["total_deductions"]
         )
 
         # --------------------------------------------------
@@ -156,7 +106,9 @@ class PayrollCalculator:
 
         return {
             "monthly_wage": monthly_wage,
-            "worker_food_allowance": worker_food_allowance,
+            "worker_food_allowance": (
+                worker_food_allowance
+            ),
             "housing_allowance": housing_allowance,
             "marriage_allowance": marriage_allowance,
             "daily_wage": daily_wage,
@@ -171,14 +123,12 @@ class PayrollCalculator:
                 total_eligible_benefits
             ),
             "gross_earnings": gross_earnings,
-
-            "insurance": deduction_totals["insurance"],
-            "tax": deduction_totals["tax"],
-            "advance": deduction_totals["advance"],
-            "loan": deduction_totals["loan"],
-            "absence": deduction_totals["absence"],
-            "other": deduction_totals["other"],
-
+            "insurance": deductions["insurance"],
+            "tax": deductions["tax"],
+            "advance": deductions["advance"],
+            "loan": deductions["loan"],
+            "absence": deductions["absence"],
+            "other": deductions["other"],
             "total_deductions": total_deductions,
             "net_salary": net_salary,
         }

@@ -727,33 +727,6 @@ class DocumentAPITest(APITestCase):
             0,
         )
 
-
-    def test_user_cannot_retrieve_other_users_document(self):
-
-        document = Document.objects.create(
-            document_type=Document.DocumentType.PERSONNEL,
-            title="Private Document",
-            file=self.create_file(
-                name="private.pdf",
-            ),
-            uploaded_by=self.other_user,
-        )
-
-        response = self.client.get(
-            reverse(
-                "document-detail",
-                kwargs={
-                    "pk": document.pk
-                },
-            )
-        )
-
-        self.assertEqual(
-            response.status_code,
-            status.HTTP_404_NOT_FOUND,
-        )
-
-
     def test_user_cannot_update_other_users_document(self):
 
         document = Document.objects.create(
@@ -789,39 +762,6 @@ class DocumentAPITest(APITestCase):
             document.title,
             "Private Document",
         )
-
-
-    def test_user_cannot_delete_other_users_document(self):
-
-        document = Document.objects.create(
-            document_type=Document.DocumentType.PERSONNEL,
-            title="Private Document",
-            file=self.create_file(
-                name="private_delete.pdf",
-            ),
-            uploaded_by=self.other_user,
-        )
-
-        response = self.client.delete(
-            reverse(
-                "document-detail",
-                kwargs={
-                    "pk": document.pk
-                },
-            )
-        )
-
-        self.assertEqual(
-            response.status_code,
-            status.HTTP_404_NOT_FOUND,
-        )
-
-        self.assertTrue(
-            Document.objects.filter(
-                pk=document.pk
-            ).exists()
-        )
-
 
     def test_staff_can_list_all_documents(self):
 
@@ -1155,138 +1095,61 @@ class DocumentAPITest(APITestCase):
             document.is_verified,
         )
 
-def test_user_cannot_see_other_users_documents(self):
+    def test_user_cannot_retrieve_other_users_document(self):
 
-    other_user = User.objects.create_user(
-        username="other_document_user",
-        password="StrongPassword123!",
-    )
-
-    Document.objects.create(
-        document_type=Document.DocumentType.PERSONNEL,
-        title="Other User Document",
-        file=self.create_file(
-            name="other.pdf",
-        ),
-        uploaded_by=other_user,
-    )
-
-    response = self.client.get(
-        self.document_url
-    )
-
-    self.assertEqual(
-        response.status_code,
-        status.HTTP_200_OK,
-    )
-
-    self.assertEqual(
-        response.data["count"],
-        0,
-    )
-
-
-def test_user_cannot_retrieve_other_users_document(self):
-
-    other_user = User.objects.create_user(
-        username="other_document_user",
-        password="StrongPassword123!",
-    )
-
-    document = Document.objects.create(
-        document_type=Document.DocumentType.PERSONNEL,
-        title="Other User Document",
-        file=self.create_file(
-            name="other.pdf",
-        ),
-        uploaded_by=other_user,
-    )
-
-    response = self.client.get(
-        reverse(
-            "document-detail",
-            kwargs={
-                "pk": document.pk
-            },
+        document = Document.objects.create(
+            document_type=Document.DocumentType.PERSONNEL,
+            title="Private Document",
+            file=self.create_file(
+                name="private.pdf",
+            ),
+            uploaded_by=self.other_user,
         )
-    )
 
-    self.assertEqual(
-        response.status_code,
-        status.HTTP_404_NOT_FOUND,
-    )
-
-
-def test_user_cannot_update_other_users_document(self):
-
-    other_user = User.objects.create_user(
-        username="other_document_user",
-        password="StrongPassword123!",
-    )
-
-    document = Document.objects.create(
-        document_type=Document.DocumentType.PERSONNEL,
-        title="Original Title",
-        file=self.create_file(
-            name="other.pdf",
-        ),
-        uploaded_by=other_user,
-    )
-
-    response = self.client.patch(
-        reverse(
-            "document-detail",
-            kwargs={
-                "pk": document.pk
-            },
-        ),
-        {
-            "title": "Changed",
-        },
-        format="multipart",
-    )
-
-    self.assertEqual(
-        response.status_code,
-        status.HTTP_404_NOT_FOUND,
-    )
-
-
-def test_user_cannot_delete_other_users_document(self):
-
-    other_user = User.objects.create_user(
-        username="other_document_user",
-        password="StrongPassword123!",
-    )
-
-    document = Document.objects.create(
-        document_type=Document.DocumentType.PERSONNEL,
-        title="Other User Document",
-        file=self.create_file(
-            name="other.pdf",
-        ),
-        uploaded_by=other_user,
-    )
-
-    response = self.client.delete(
-        reverse(
-            "document-detail",
-            kwargs={
-                "pk": document.pk
-            },
+        response = self.client.get(
+            reverse(
+                "document-detail",
+                kwargs={
+                    "pk": document.pk
+                },
+            )
         )
-    )
 
-    self.assertEqual(
-        response.status_code,
-        status.HTTP_404_NOT_FOUND,
-    )
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
 
-    self.assertTrue(
-        Document.objects.filter(
-            pk=document.pk
-        ).exists()
-    )
+    def test_user_cannot_delete_other_users_document(self):
+
+        document = Document.objects.create(
+            document_type=Document.DocumentType.PERSONNEL,
+            title="Private Document",
+            file=self.create_file(
+                name="private_delete.pdf",
+            ),
+            uploaded_by=self.other_user,
+        )
+
+        response = self.client.delete(
+            reverse(
+                "document-detail",
+                kwargs={
+                    "pk": document.pk
+                },
+            )
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+        self.assertTrue(
+            Document.objects.filter(
+                pk=document.pk
+            ).exists()
+        )
 
 
     def test_staff_can_access_all_documents(self):
@@ -1321,4 +1184,369 @@ def test_user_cannot_delete_other_users_document(self):
         self.assertEqual(
             response.data["id"],
             document.id,
+        )
+
+    def test_normal_user_cannot_forge_uploaded_by_on_create(self):
+
+        response = self.client.post(
+            self.document_url,
+            {
+                "document_type": Document.DocumentType.PERSONNEL,
+                "title": "Forged Owner Test",
+                "description": "Testing uploaded_by protection.",
+                "file": self.create_file(
+                    name="forged_owner.pdf",
+                ),
+                "is_verified": False,
+                "uploaded_by": self.other_user.id,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+            response.data,
+        )
+
+        document = Document.objects.get()
+
+        self.assertEqual(
+            document.uploaded_by,
+            self.user,
+        )
+
+        self.assertNotEqual(
+            document.uploaded_by,
+            self.other_user,
+        )
+
+
+    def test_normal_user_cannot_change_uploaded_by_on_update(self):
+
+        document = Document.objects.create(
+            document_type=Document.DocumentType.PERSONNEL,
+            title="Original Owner",
+            file=self.create_file(
+                name="owner_protection.pdf",
+            ),
+            uploaded_by=self.user,
+        )
+
+        response = self.client.patch(
+            reverse(
+                "document-detail",
+                kwargs={
+                    "pk": document.pk,
+                },
+            ),
+            {
+                "title": "Updated Title",
+                "uploaded_by": self.other_user.id,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+            response.data,
+        )
+
+        document.refresh_from_db()
+
+        self.assertEqual(
+            document.uploaded_by,
+            self.user,
+        )
+
+        self.assertEqual(
+            document.title,
+            "Updated Title",
+        )
+
+
+    def test_staff_cannot_change_uploaded_by_on_update(self):
+
+        document = Document.objects.create(
+            document_type=Document.DocumentType.PERSONNEL,
+            title="Staff Owner Protection",
+            file=self.create_file(
+                name="staff_owner_protection.pdf",
+            ),
+            uploaded_by=self.user,
+        )
+
+        self.client.force_authenticate(
+            user=self.staff
+        )
+
+        response = self.client.patch(
+            reverse(
+                "document-detail",
+                kwargs={
+                    "pk": document.pk,
+                },
+            ),
+            {
+                "uploaded_by": self.other_user.id,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+            response.data,
+        )
+
+        document.refresh_from_db()
+
+        self.assertEqual(
+            document.uploaded_by,
+            self.user,
+        )
+
+
+    def test_normal_user_cannot_change_uploaded_at(self):
+
+        document = Document.objects.create(
+            document_type=Document.DocumentType.PERSONNEL,
+            title="Timestamp Protection",
+            file=self.create_file(
+                name="timestamp.pdf",
+            ),
+            uploaded_by=self.user,
+        )
+
+        original_uploaded_at = document.uploaded_at
+
+        response = self.client.patch(
+            reverse(
+                "document-detail",
+                kwargs={
+                    "pk": document.pk,
+                },
+            ),
+            {
+                "uploaded_at": "2000-01-01T00:00:00Z",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+            response.data,
+        )
+
+        document.refresh_from_db()
+
+        self.assertEqual(
+            document.uploaded_at,
+            original_uploaded_at,
+        )
+
+
+    def test_normal_user_cannot_change_updated_at(self):
+
+        document = Document.objects.create(
+            document_type=Document.DocumentType.PERSONNEL,
+            title="Updated Timestamp Protection",
+            file=self.create_file(
+                name="updated_timestamp.pdf",
+            ),
+            uploaded_by=self.user,
+        )
+
+        response = self.client.patch(
+            reverse(
+                "document-detail",
+                kwargs={
+                    "pk": document.pk,
+                },
+            ),
+            {
+                "updated_at": "2000-01-01T00:00:00Z",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+            response.data,
+        )
+
+        document.refresh_from_db()
+
+        self.assertNotEqual(
+            document.updated_at.year,
+            2000,
+        )
+
+
+    def test_expiry_date_today_is_valid(self):
+
+        today = timezone.localdate()
+
+        response = self.client.post(
+            self.document_url,
+            {
+                "document_type": Document.DocumentType.PERSONNEL,
+                "title": "Expires Today",
+                "description": "Expiry date is today.",
+                "file": self.create_file(
+                    name="expires_today.pdf",
+                ),
+                "expiry_date": today.isoformat(),
+                "is_verified": False,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+            response.data,
+        )
+
+        document = Document.objects.get()
+
+        self.assertEqual(
+            document.expiry_date,
+            today,
+        )
+
+        detail_response = self.client.get(
+            reverse(
+                "document-detail",
+                kwargs={
+                    "pk": document.pk,
+                },
+            )
+        )
+
+        self.assertEqual(
+            detail_response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            detail_response.data["expiry_status"],
+            "valid",
+        )
+
+
+    def test_uppercase_allowed_file_extension_is_accepted(self):
+
+        response = self.client.post(
+            self.document_url,
+            {
+                "document_type": Document.DocumentType.PERSONNEL,
+                "title": "Uppercase Extension",
+                "description": "Testing case-insensitive extension.",
+                "file": self.create_file(
+                    name="document.PDF",
+                ),
+                "is_verified": False,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_201_CREATED,
+            response.data,
+        )
+
+
+    def test_file_without_extension_is_rejected(self):
+
+        response = self.client.post(
+            self.document_url,
+            {
+                "document_type": Document.DocumentType.PERSONNEL,
+                "title": "No Extension",
+                "description": "Testing missing extension.",
+                "file": self.create_file(
+                    name="document",
+                ),
+                "is_verified": False,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertIn(
+            "file",
+            response.data,
+        )
+
+
+    def test_normal_user_cannot_verify_using_string_true(self):
+
+        response = self.client.post(
+            self.document_url,
+            {
+                "document_type": Document.DocumentType.PERSONNEL,
+                "title": "String True Verification",
+                "description": "Testing verification protection.",
+                "file": self.create_file(
+                    name="string_true.pdf",
+                ),
+                "is_verified": "true",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertIn(
+            "is_verified",
+            response.data,
+        )
+
+        self.assertEqual(
+            Document.objects.count(),
+            0,
+        )
+
+
+    def test_normal_user_cannot_verify_using_boolean_true(self):
+
+        response = self.client.post(
+            self.document_url,
+            {
+                "document_type": Document.DocumentType.PERSONNEL,
+                "title": "Boolean True Verification",
+                "description": "Testing verification protection.",
+                "file": self.create_file(
+                    name="boolean_true.pdf",
+                ),
+                "is_verified": True,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertIn(
+            "is_verified",
+            response.data,
+        )
+
+        self.assertEqual(
+            Document.objects.count(),
+            0,
         )
