@@ -1,0 +1,29 @@
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #f0f2f5;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 430px;
+  border-radius: 12px;
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.login-header h2 {
+  margin-bottom: 8px;
+}
+
+.dashboard-page {
+  min-height: 100vh;
+  padding: 32px;
+  background: #f5f5f5;
+}

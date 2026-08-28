@@ -416,6 +416,8 @@ class JWTAuthenticationTest(APITestCase):
 
         refresh_token = response.data["refresh"]
 
+        from rest_framework_simplejwt.tokens import RefreshToken
+
         self.client.credentials(
             HTTP_AUTHORIZATION=(
                 f"Bearer {response.data['access']}"
@@ -500,6 +502,69 @@ class JWTAuthenticationTest(APITestCase):
         self.assertEqual(
             response.status_code,
             status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_user_cannot_logout_another_users_refresh_token(self):
+        other_user = User.objects.create_user(
+            username="other_user",
+            password="OtherPassword123",
+        )
+
+        response = self.client.post(
+            self.token_url,
+            {
+                "username": "other_user",
+                "password": "OtherPassword123",
+            },
+            format="json",
+        )
+ 
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        other_refresh_token = response.data["refresh"]
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.post(
+            "/api/accounts/logout/",
+            {
+                "refresh": other_refresh_token,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        self.client.force_authenticate(
+            user=other_user
+        )
+
+        response = self.client.post(
+            self.refresh_url,
+            {
+                "refresh": other_refresh_token,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertFalse(
+            AuditLog.objects.filter(
+                actor=self.user,
+                action=AuditLog.Action.LOGOUT,
+            ).exists()
         )
 
 class UserManagementAPITest(APITestCase):

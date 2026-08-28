@@ -201,12 +201,44 @@ class LogoutAPIView(APIView):
 
     def post(self, request):
         serializer = LogoutSerializer(
-            data=request.data
+            data=request.data,
+            context={
+                "request": request,
+            },
         )
 
         serializer.is_valid(
             raise_exception=True
         )
+
+        if serializer.validated_data.get(
+            "_token_owner_mismatch",
+            False,
+        ):
+            return Response(
+                {
+                    "detail": (
+                        "You can only logout "
+                        "your own session."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        token = serializer.validated_data["_refresh_token"]
+
+        try:
+            token.blacklist()
+        except Exception:
+            return Response(
+                {
+                    "refresh": (
+                        "Invalid or already blacklisted "
+                        "refresh token."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         AuditService.logout(
             actor=request.user,

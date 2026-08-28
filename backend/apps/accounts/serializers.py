@@ -1,6 +1,5 @@
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
-
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
@@ -208,10 +207,19 @@ class LogoutSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         refresh_token = attrs["refresh"]
+        request = self.context.get("request")
+
+        if not request or not request.user.is_authenticated:
+            raise serializers.ValidationError(
+                {
+                    "refresh": (
+                        "Authentication is required."
+                    )
+                }
+            )
 
         try:
             token = RefreshToken(refresh_token)
-            token.blacklist()
         except Exception:
             raise serializers.ValidationError(
                 {
@@ -221,5 +229,14 @@ class LogoutSerializer(serializers.Serializer):
                     )
                 }
             )
+
+        token_user_id = token.get("user_id")
+
+        if str(token_user_id) != str(request.user.pk):
+            attrs["_token_owner_mismatch"] = True
+            attrs["_refresh_token"] = token
+            return attrs
+
+        attrs["_refresh_token"] = token
 
         return attrs
