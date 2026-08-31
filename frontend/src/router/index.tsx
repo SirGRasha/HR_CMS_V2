@@ -9,6 +9,8 @@ import AppLayout from "../components/layout/AppLayout"
 import LoginPage from "../pages/auth/LoginPage"
 import DashboardPage from "../pages/dashboard/DashboardPage"
 import EmployeesPage from "../pages/personnel/EmployeesPage"
+import OrganizationPage from "../pages/organization/OrganizationPage"
+import PayrollPage from "../pages/payroll/PayrollPage"
 
 export const router =
   createBrowserRouter([
@@ -34,6 +36,15 @@ export const router =
               path: "/employees",
               element: <EmployeesPage />,
             },
+            {
+              path: "/organization",
+              element: <OrganizationPage />,
+            },
+            {
+              path: "/payroll",
+              element: <PayrollPage />,
+            },
+            
           ],
         },
       ],

@@ -109,6 +109,50 @@ class EmployeeChildViewSet(viewsets.ModelViewSet):
 
         return queryset
 
+    def perform_create(self, serializer):
+        employee = serializer.validated_data.get(
+            "employee"
+        )
+
+        if not (
+            self.request.user.is_staff
+            or self.request.user.is_superuser
+        ):
+            if (
+                employee is None
+                or employee.user != self.request.user
+            ):
+                from rest_framework.exceptions import (
+                    PermissionDenied,
+                )
+
+                raise PermissionDenied(
+                    "امکان ثبت فرزند برای پرسنل دیگر وجود ندارد."
+                )
+
+        serializer.save()
+
+    def perform_update(self, serializer):
+        employee = serializer.validated_data.get(
+            "employee",
+            serializer.instance.employee,
+        )
+
+        if not (
+            self.request.user.is_staff
+            or self.request.user.is_superuser
+        ):
+            if employee.user != self.request.user:
+                from rest_framework.exceptions import (
+                    PermissionDenied,
+                )
+
+                raise PermissionDenied(
+                    "امکان انتقال فرزند به پرسنل دیگر وجود ندارد."
+                )
+
+        serializer.save()
+
 class EmployeePhoneViewSet(viewsets.ModelViewSet):
 
     permission_classes = [

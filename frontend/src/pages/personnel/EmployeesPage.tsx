@@ -22,17 +22,32 @@ import {
   ReloadOutlined,
   SearchOutlined,
   EyeOutlined,
+  EditOutlined,
+  StopOutlined,
+  CheckCircleOutlined,
 } from "@ant-design/icons"
 import { useEffect, useMemo, useState } from "react"
 
 import {
   createEmployee,
+  getEmployee,
   getEmployees,
+  patchEmployee,
 } from "../../api/employees"
+
+import {
+  getOrganizationUnits,
+  getPositions,
+} from "../../api/organization"
 
 import type {
   Employee,
 } from "../../types/employee"
+
+import type {
+  OrganizationUnit,
+  Position,
+} from "../../types/organization"
 
 const { Title, Text } = Typography
 
@@ -161,6 +176,69 @@ function getEmployeeGroupLabel(value: string) {
   )
 }
 
+function getGenderLabel(value: string) {
+  const labels: Record<string, string> = {
+    male: "مرد",
+    female: "زن",
+  }
+
+  return labels[value] ?? value
+}
+
+function getMaritalStatusLabel(value: string) {
+  const labels: Record<string, string> = {
+    single: "مجرد",
+    married: "متأهل",
+    separated: "متارکه",
+    widowed: "بیوه",
+  }
+
+  return labels[value] ?? value
+}
+
+function getMilitaryStatusLabel(value: string) {
+  const labels: Record<string, string> = {
+    subject: "مشمول",
+    exemption: "معافیت",
+    completed: "پایان خدمت",
+    serving: "در حال خدمت",
+    educational_exemption: "معافیت تحصیلی",
+  }
+
+  return labels[value] ?? value
+}
+
+function getTransportationStatusLabel(value: string) {
+  const labels: Record<string, string> = {
+    personal: "شخصی",
+    service: "سرویس",
+  }
+
+  return labels[value] ?? value
+}
+
+function displayValue(value: unknown): string {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return "—"
+  }
+
+  return String(value)
+}
+
+function formatJalaliDate(
+  value: string | null | undefined,
+): string {
+  if (!value) {
+    return "—"
+  }
+
+  return value
+}
+
 function getApiErrorMessage(err: unknown): string {
   if (
     err &&
@@ -176,34 +254,35 @@ function getApiErrorMessage(err: unknown): string {
       error.data &&
       typeof error.data === "object"
     ) {
-      const data = error.data as Record<
-        string,
-        unknown
-      >
+      const data = err as {
+        data?: Record<string, unknown>
+      }
 
-      const messages: string[] = []
+      if (data.data) {
+        const messages: string[] = []
 
-      Object.entries(data).forEach(
-        ([field, value]) => {
-          if (Array.isArray(value)) {
-            value.forEach((item) => {
+        Object.entries(data.data).forEach(
+          ([field, value]) => {
+            if (Array.isArray(value)) {
+              value.forEach((item) => {
+                messages.push(
+                  `${field}: ${String(item)}`,
+                )
+              })
+            } else if (
+              value !== undefined &&
+              value !== null
+            ) {
               messages.push(
-                `${field}: ${String(item)}`,
+                `${field}: ${String(value)}`,
               )
-            })
-          } else if (
-            value !== undefined &&
-            value !== null
-          ) {
-            messages.push(
-              `${field}: ${String(value)}`,
-            )
-          }
-        },
-      )
+            }
+          },
+        )
 
-      if (messages.length > 0) {
-        return messages.join(" | ")
+        if (messages.length > 0) {
+          return messages.join(" | ")
+        }
       }
     }
 
@@ -232,6 +311,9 @@ export default function EmployeesPage() {
   const [saving, setSaving] =
     useState(false)
 
+  const [statusChangingId, setStatusChangingId] =
+    useState<number | null>(null)
+
   const [error, setError] =
     useState<string | null>(null)
 
@@ -245,6 +327,33 @@ export default function EmployeesPage() {
 
   const [modalOpen, setModalOpen] =
     useState(false)
+
+  const [viewModalOpen, setViewModalOpen] =
+    useState(false)
+
+  const [selectedEmployee, setSelectedEmployee] =
+    useState<Employee | null>(null)
+
+  const [editingEmployee, setEditingEmployee] =
+    useState<Employee | null>(null)
+
+  const [viewLoading, setViewLoading] =
+    useState(false)
+
+  const [organizationUnits, setOrganizationUnits] =
+    useState<OrganizationUnit[]>([])
+
+  const [positions, setPositions] =
+    useState<Position[]>([])
+
+  const [organizationLoading, setOrganizationLoading] =
+    useState(false)
+
+  const [positionLoading, setPositionLoading] =
+    useState(false)
+
+  const [selectedOrganizationUnitId, setSelectedOrganizationUnitId] =
+    useState<number | undefined>(undefined)
 
   const loadEmployees = async () => {
     try {
@@ -276,9 +385,74 @@ export default function EmployeesPage() {
     }
   }
 
+  const loadOrganizationUnits = async () => {
+    try {
+      setOrganizationLoading(true)
+
+      const response =
+        await getOrganizationUnits({
+          is_active: true,
+        })
+
+      setOrganizationUnits(response)
+    } catch (err) {
+      console.error(
+        "LOAD ORGANIZATION UNITS ERROR:",
+        err,
+      )
+
+      message.error(
+        `خطا در دریافت واحدهای سازمانی: ${getApiErrorMessage(err)}`,
+      )
+    } finally {
+      setOrganizationLoading(false)
+    }
+  }
+
+  const loadPositions = async (
+    organizationUnitId?: number,
+  ) => {
+    try {
+      setPositionLoading(true)
+
+      if (
+        organizationUnitId === undefined
+      ) {
+        setPositions([])
+        return
+      }
+
+      const response =
+        await getPositions({
+          is_active: true,
+          organization_unit:
+            organizationUnitId,
+        })
+
+      setPositions(response)
+    } catch (err) {
+      console.error(
+        "LOAD POSITIONS ERROR:",
+        err,
+      )
+
+      message.error(
+        `خطا در دریافت سمت‌های سازمانی: ${getApiErrorMessage(err)}`,
+      )
+
+      setPositions([])
+    } finally {
+      setPositionLoading(false)
+    }
+  }
+
   useEffect(() => {
     loadEmployees()
   }, [activeFilter])
+
+  useEffect(() => {
+    loadOrganizationUnits()
+  }, [])
 
   const filteredEmployees =
     useMemo(() => {
@@ -310,7 +484,179 @@ export default function EmployeesPage() {
       )
     }, [employees, search])
 
+  const handleViewEmployee = async (
+    employeeId: number,
+  ) => {
+    try {
+      setViewLoading(true)
+      setSelectedEmployee(null)
+      setViewModalOpen(true)
+
+      const employee =
+        await getEmployee(employeeId)
+
+      setSelectedEmployee(employee)
+    } catch (err) {
+      console.error(
+        "GET EMPLOYEE ERROR:",
+        err,
+      )
+
+      message.error(
+        getApiErrorMessage(err),
+      )
+
+      setViewModalOpen(false)
+    } finally {
+      setViewLoading(false)
+    }
+  }
+
+  const handleEditEmployee = async (
+    employeeId: number,
+  ) => {
+    try {
+      setSaving(true)
+
+      const employee =
+        await getEmployee(employeeId)
+
+      setEditingEmployee(employee)
+
+      const organizationUnitId =
+        employee.position_detail
+          ?.organization_unit
+          ?.id
+
+      setSelectedOrganizationUnitId(
+        organizationUnitId,
+      )
+
+      if (
+        organizationUnitId !== undefined
+      ) {
+        await loadPositions(
+          organizationUnitId,
+        )
+      } else {
+        setPositions([])
+      }
+
+      form.setFieldsValue({
+        personnel_code:
+          employee.personnel_code,
+
+        first_name:
+          employee.first_name,
+
+        last_name:
+          employee.last_name,
+
+        national_id:
+          employee.national_id,
+
+        birth_certificate_number:
+          employee.birth_certificate_number ??
+          "",
+
+        father_name:
+          employee.father_name ?? "",
+
+        gender:
+          employee.gender,
+
+        employee_group:
+          employee.employee_group,
+
+        marital_status:
+          employee.marital_status,
+
+        military_status:
+          employee.military_status ?? "",
+
+        department:
+          employee.department ?? "",
+
+        job_title:
+          employee.job_title ?? "",
+
+        position:
+          employee.position ?? undefined,
+
+        education_level:
+          employee.education_level ?? "",
+
+        field_of_study:
+          employee.field_of_study ?? "",
+
+        student_number:
+          employee.student_number ?? "",
+
+        child_count:
+          employee.child_count ?? 0,
+
+        landline_phone:
+          employee.landline_phone ?? "",
+
+        residence_area:
+          employee.residence_area ?? "",
+
+        address:
+          employee.address ?? "",
+
+        transportation_status:
+          employee.transportation_status ?? "",
+
+        transportation_description:
+          employee.transportation_description ??
+          "",
+
+        contract_title:
+          employee.contract_title ?? "",
+
+        contract_position:
+          employee.contract_position ?? "",
+
+        insurance_number:
+          employee.insurance_number ?? "",
+
+        birth_date:
+          employee.birth_date ?? undefined,
+
+        start_date:
+          employee.start_date ?? undefined,
+
+        insurance_date:
+          employee.insurance_date ?? undefined,
+
+        notes:
+          employee.notes ?? "",
+      })
+
+      setModalOpen(true)
+    } catch (err) {
+      console.error(
+        "GET EMPLOYEE FOR EDIT ERROR:",
+        err,
+      )
+
+      message.error(
+        getApiErrorMessage(err),
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleOpenCreate = () => {
+    setEditingEmployee(null)
+
+    setSelectedOrganizationUnitId(
+      undefined,
+    )
+
+    setPositions([])
+
     form.resetFields()
 
     form.setFieldsValue({
@@ -323,12 +669,36 @@ export default function EmployeesPage() {
     setModalOpen(true)
   }
 
+  const handleOrganizationUnitChange = async (
+    value: number | undefined,
+  ) => {
+    setSelectedOrganizationUnitId(
+      value,
+    )
+
+    form.setFieldValue(
+      "position",
+      undefined,
+    )
+
+    setPositions([])
+
+    if (value !== undefined) {
+      await loadPositions(value)
+    }
+  }
+
   const handleCloseCreate = () => {
     if (saving) {
       return
     }
 
     setModalOpen(false)
+    setEditingEmployee(null)
+    setSelectedOrganizationUnitId(
+      undefined,
+    )
+    setPositions([])
     form.resetFields()
   }
 
@@ -339,7 +709,7 @@ export default function EmployeesPage() {
 
       setSaving(true)
 
-      await createEmployee({
+      const payload = {
         personnel_code:
           values.personnel_code,
 
@@ -353,8 +723,7 @@ export default function EmployeesPage() {
           values.national_id,
 
         birth_certificate_number:
-          values.birth_certificate_number ??
-          "",
+          values.birth_certificate_number ?? "",
 
         father_name:
           values.father_name ?? "",
@@ -402,12 +771,10 @@ export default function EmployeesPage() {
           values.address ?? "",
 
         transportation_status:
-          values.transportation_status ??
-          "",
+          values.transportation_status ?? "",
 
         transportation_description:
-          values.transportation_description ??
-          "",
+          values.transportation_description ?? "",
 
         contract_title:
           values.contract_title ?? "",
@@ -429,21 +796,40 @@ export default function EmployeesPage() {
 
         notes:
           values.notes ?? "",
+      }
 
-        is_active: true,
-      })
+      if (editingEmployee) {
+        await patchEmployee(
+          editingEmployee.id,
+          payload,
+        )
 
-      message.success(
-        "کارمند با موفقیت ثبت شد.",
-      )
+        message.success(
+          "اطلاعات کارمند با موفقیت ویرایش شد.",
+        )
+      } else {
+        await createEmployee({
+          ...payload,
+          is_active: true,
+        })
+
+        message.success(
+          "کارمند با موفقیت ثبت شد.",
+        )
+      }
 
       setModalOpen(false)
+      setEditingEmployee(null)
+      setSelectedOrganizationUnitId(
+        undefined,
+      )
+      setPositions([])
       form.resetFields()
 
       await loadEmployees()
     } catch (err) {
       console.error(
-        "CREATE EMPLOYEE ERROR:",
+        "SAVE EMPLOYEE ERROR:",
         err,
       )
 
@@ -459,12 +845,97 @@ export default function EmployeesPage() {
         getApiErrorMessage(err)
 
       message.error(
-        `ثبت کارمند با خطا مواجه شد: ${errorMessage}`,
+        `${editingEmployee ? "ویرایش" : "ثبت"} کارمند با خطا مواجه شد: ${errorMessage}`,
         6,
       )
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleToggleEmployeeStatus = (
+    employee: Employee,
+  ) => {
+    const nextStatus =
+      !employee.is_active
+
+    const actionText =
+      nextStatus
+        ? "فعال کردن"
+        : "غیرفعال کردن"
+
+    const successText =
+      nextStatus
+        ? "کارمند با موفقیت فعال شد."
+        : "کارمند با موفقیت غیرفعال شد."
+
+    Modal.confirm({
+      title: `${actionText} کارمند`,
+      content: (
+        <div dir="rtl">
+          آیا از {actionText} کارمند{" "}
+          <strong>
+            {employee.first_name}{" "}
+            {employee.last_name}
+          </strong>{" "}
+          با کد پرسنلی{" "}
+          <strong>
+            {employee.personnel_code}
+          </strong>{" "}
+          اطمینان دارید؟
+        </div>
+      ),
+      okText: actionText,
+      cancelText: "انصراف",
+      centered: true,
+      okButtonProps: {
+        danger: !nextStatus,
+      },
+      onOk: async () => {
+        try {
+          setStatusChangingId(
+            employee.id,
+          )
+
+          await patchEmployee(
+            employee.id,
+            {
+              is_active: nextStatus,
+            },
+          )
+
+          message.success(
+            successText,
+          )
+
+          await loadEmployees()
+
+          if (
+            selectedEmployee?.id ===
+            employee.id
+          ) {
+            setSelectedEmployee({
+              ...selectedEmployee,
+              is_active: nextStatus,
+            })
+          }
+        } catch (err) {
+          console.error(
+            "TOGGLE EMPLOYEE STATUS ERROR:",
+            err,
+          )
+
+          message.error(
+            `${actionText} کارمند با خطا مواجه شد: ${getApiErrorMessage(err)}`,
+            6,
+          )
+
+          throw err
+        } finally {
+          setStatusChangingId(null)
+        }
+      },
+    })
   }
 
   const columns: ColumnsType<Employee> =
@@ -501,32 +972,15 @@ export default function EmployeesPage() {
 
       {
         title:
-          "گروه کارکنان",
-        key: "employee_group",
-        render: (
-          _,
-          record,
-        ) =>
-          getEmployeeGroupLabel(
-            record.employee_group,
-          ),
-      },
-
-      {
-        title:
-          "عنوان شغلی",
+          "کد ملی",
         dataIndex:
-          "job_title",
-        key: "job_title",
-        render: (
-          value: string,
-        ) =>
-          value || "—",
+          "national_id",
+        key: "national_id",
       },
 
       {
         title:
-          "سمت سازمانی",
+          "سمت",
         key: "position",
         render: (
           _,
@@ -534,7 +988,37 @@ export default function EmployeesPage() {
         ) =>
           record.position_detail
             ?.title ??
+          record.job_title ??
           "—",
+      },
+
+      {
+        title:
+          "واحد سازمانی",
+        key: "organization_unit",
+        render: (
+          _,
+          record,
+        ) =>
+          record.position_detail
+            ?.organization_unit
+            ?.name ??
+          record.department ??
+          "—",
+      },
+
+      {
+        title:
+          "گروه پرسنلی",
+        dataIndex:
+          "employee_group",
+        key: "employee_group",
+        render: (
+          value: string,
+        ) =>
+          getEmployeeGroupLabel(
+            value,
+          ),
       },
 
       {
@@ -562,15 +1046,76 @@ export default function EmployeesPage() {
           "عملیات",
         key: "actions",
         align: "center",
-        render: () => (
-          <Button
-            type="link"
-            icon={
-              <EyeOutlined />
-            }
-          >
-            مشاهده
-          </Button>
+        width: 330,
+        render: (_, record) => (
+          <Space>
+            <Button
+              type="link"
+              icon={
+                <EyeOutlined />
+              }
+              onClick={() =>
+                handleViewEmployee(
+                  record.id,
+                )
+              }
+            >
+              مشاهده
+            </Button>
+
+            <Button
+              type="link"
+              icon={
+                <EditOutlined />
+              }
+              onClick={() =>
+                handleEditEmployee(
+                  record.id,
+                )
+              }
+            >
+              ویرایش
+            </Button>
+
+            {record.is_active ? (
+              <Button
+                type="link"
+                danger
+                icon={
+                  <StopOutlined />
+                }
+                loading={
+                  statusChangingId ===
+                  record.id
+                }
+                onClick={() =>
+                  handleToggleEmployeeStatus(
+                    record,
+                  )
+                }
+              >
+                غیرفعال کردن
+              </Button>
+            ) : (
+              <Button
+                type="link"
+                icon={
+                  <CheckCircleOutlined />
+                }
+                loading={
+                  statusChangingId ===
+                  record.id
+                }
+                onClick={() =>
+                  handleToggleEmployeeStatus(
+                    record,
+                  )
+                }
+              >
+                فعال کردن
+              </Button>
+            )}
+          </Space>
         ),
       },
     ]
@@ -613,7 +1158,7 @@ export default function EmployeesPage() {
               </Title>
 
               <Text type="secondary">
-                مدیریت اطلاعات کارکنان سازمان
+                مدیریت اطلاعات کارکنان
               </Text>
             </div>
 
@@ -752,7 +1297,7 @@ export default function EmployeesPage() {
                 filteredEmployees
               }
               scroll={{
-                x: 1000,
+                x: 1500,
               }}
               pagination={{
                 pageSize: 10,
@@ -772,9 +1317,501 @@ export default function EmployeesPage() {
         </Space>
       </Card>
 
-      {/* Create Employee Modal */}
+      {/* Employee Details Modal */}
       <Modal
-        title="افزودن کارمند جدید"
+        title="مشاهده اطلاعات کارمند"
+        open={viewModalOpen}
+        onCancel={() => {
+          if (viewLoading) {
+            return
+          }
+
+          setViewModalOpen(false)
+          setSelectedEmployee(null)
+        }}
+        width={900}
+        centered
+        footer={[
+          <Button
+            key="close"
+            onClick={() => {
+              setViewModalOpen(false)
+              setSelectedEmployee(null)
+            }}
+            disabled={viewLoading}
+          >
+            بستن
+          </Button>,
+        ]}
+      >
+        {viewLoading ? (
+          <div
+            style={{
+              minHeight: 300,
+              display: "flex",
+              alignItems:
+                "center",
+              justifyContent:
+                "center",
+            }}
+          >
+            <Spin size="large" />
+          </div>
+        ) : selectedEmployee ? (
+          <Space
+            direction="vertical"
+            size="large"
+            style={{
+              width: "100%",
+              marginTop: 20,
+            }}
+          >
+            {/* اطلاعات اصلی */}
+            <Card
+              size="small"
+              title="اطلاعات اصلی"
+            >
+              <Row gutter={[16, 16]}>
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    کد پرسنلی
+                  </Text>
+                  <div>
+                    <Text strong>
+                      {
+                        selectedEmployee.personnel_code
+                      }
+                    </Text>
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    نام و نام خانوادگی
+                  </Text>
+                  <div>
+                    <Text strong>
+                      {
+                        `${selectedEmployee.first_name} ${selectedEmployee.last_name}`
+                      }
+                    </Text>
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    کد ملی
+                  </Text>
+                  <div>
+                    <Text strong>
+                      {
+                        selectedEmployee.national_id
+                      }
+                    </Text>
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    شماره شناسنامه
+                  </Text>
+                  <div>
+                    {
+                      displayValue(
+                        selectedEmployee.birth_certificate_number,
+                      )
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    نام پدر
+                  </Text>
+                  <div>
+                    {
+                      displayValue(
+                        selectedEmployee.father_name,
+                      )
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    جنسیت
+                  </Text>
+                  <div>
+                    {
+                      getGenderLabel(
+                        selectedEmployee.gender,
+                      )
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    وضعیت تأهل
+                  </Text>
+                  <div>
+                    {
+                      getMaritalStatusLabel(
+                        selectedEmployee.marital_status,
+                      )
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    تعداد فرزندان
+                  </Text>
+                  <div>
+                    {
+                      selectedEmployee.child_count
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    وضعیت
+                  </Text>
+                  <div>
+                    {selectedEmployee.is_active ? (
+                      <Tag color="success">
+                        فعال
+                      </Tag>
+                    ) : (
+                      <Tag color="error">
+                        غیرفعال
+                      </Tag>
+                    )}
+                  </div>
+                </Col>
+              </Row>
+            </Card>
+
+            {/* اطلاعات سازمانی */}
+            <Card
+              size="small"
+              title="اطلاعات سازمانی"
+            >
+              <Row gutter={[16, 16]}>
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    گروه کارکنان
+                  </Text>
+                  <div>
+                    {
+                      getEmployeeGroupLabel(
+                        selectedEmployee.employee_group,
+                      )
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    واحد / دپارتمان
+                  </Text>
+                  <div>
+                    {
+                      selectedEmployee.department ||
+                      "—"
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    عنوان شغلی
+                  </Text>
+                  <div>
+                    {
+                      selectedEmployee.job_title ||
+                      "—"
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    سمت سازمانی
+                  </Text>
+                  <div>
+                    {
+                      selectedEmployee
+                        .position_detail
+                        ?.title || "—"
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    کد سمت
+                  </Text>
+                  <div>
+                    {
+                      selectedEmployee
+                        .position_detail
+                        ?.code || "—"
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    واحد سازمانی
+                  </Text>
+                  <div>
+                    {
+                      selectedEmployee
+                        .position_detail
+                        ?.organization_unit
+                        ?.name || "—"
+                    }
+                  </div>
+                </Col>
+              </Row>
+            </Card>
+
+            {/* تحصیلات و نظام وظیفه */}
+            <Card
+              size="small"
+              title="تحصیلات و نظام وظیفه"
+            >
+              <Row gutter={[16, 16]}>
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    آخرین مدرک تحصیلی
+                  </Text>
+                  <div>
+                    {
+                      selectedEmployee.education_level ||
+                      "—"
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    رشته تحصیلی
+                  </Text>
+                  <div>
+                    {
+                      selectedEmployee.field_of_study ||
+                      "—"
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    شماره دانشجویی
+                  </Text>
+                  <div>
+                    {
+                      displayValue(
+                        selectedEmployee.student_number,
+                      )
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    وضعیت نظام وظیفه
+                  </Text>
+                  <div>
+                    {
+                      getMilitaryStatusLabel(
+                        selectedEmployee.military_status,
+                      )
+                    }
+                  </div>
+                </Col>
+              </Row>
+            </Card>
+
+            {/* اطلاعات تماس و سکونت */}
+            <Card
+              size="small"
+              title="اطلاعات تماس و سکونت"
+            >
+              <Row gutter={[16, 16]}>
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    تلفن ثابت
+                  </Text>
+                  <div>
+                    {
+                      selectedEmployee.landline_phone ||
+                      "—"
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    منطقه سکونت
+                  </Text>
+                  <div>
+                    {
+                      selectedEmployee.residence_area ||
+                      "—"
+                    }
+                  </div>
+                </Col>
+
+                <Col span={24}>
+                  <Text type="secondary">
+                    آدرس
+                  </Text>
+                  <div>
+                    {
+                      selectedEmployee.address ||
+                      "—"
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12}>
+                  <Text type="secondary">
+                    وضعیت تردد
+                  </Text>
+                  <div>
+                    {
+                      getTransportationStatusLabel(
+                        selectedEmployee.transportation_status,
+                      )
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12}>
+                  <Text type="secondary">
+                    توضیحات سرویس
+                  </Text>
+                  <div>
+                    {
+                      selectedEmployee
+                        .transportation_description ||
+                      "—"
+                    }
+                  </div>
+                </Col>
+              </Row>
+            </Card>
+
+            {/* اطلاعات قرارداد و بیمه */}
+            <Card
+              size="small"
+              title="اطلاعات قرارداد و بیمه"
+            >
+              <Row gutter={[16, 16]}>
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    عنوان قرارداد
+                  </Text>
+                  <div>
+                    {
+                      selectedEmployee.contract_title ||
+                      "—"
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    سمت درج‌شده در قرارداد
+                  </Text>
+                  <div>
+                    {
+                      selectedEmployee.contract_position ||
+                      "—"
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    شماره بیمه
+                  </Text>
+                  <div>
+                    {
+                      selectedEmployee.insurance_number ||
+                      "—"
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    تاریخ شروع به کار
+                  </Text>
+                  <div>
+                    {
+                      formatJalaliDate(
+                        selectedEmployee.start_date,
+                      )
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    تاریخ بیمه
+                  </Text>
+                  <div>
+                    {
+                      formatJalaliDate(
+                        selectedEmployee.insurance_date,
+                      )
+                    }
+                  </div>
+                </Col>
+
+                <Col xs={24} sm={12} md={8}>
+                  <Text type="secondary">
+                    تاریخ تولد
+                  </Text>
+                  <div>
+                    {
+                      formatJalaliDate(
+                        selectedEmployee.birth_date,
+                      )
+                    }
+                  </div>
+                </Col>
+              </Row>
+            </Card>
+
+            {/* توضیحات */}
+            <Card
+              size="small"
+              title="توضیحات"
+            >
+              <Text>
+                {
+                  selectedEmployee.notes ||
+                  "توضیحاتی ثبت نشده است."
+                }
+              </Text>
+            </Card>
+          </Space>
+        ) : null}
+      </Modal>
+
+      {/* Create / Edit Employee Modal */}
+      <Modal
+        title={
+          editingEmployee
+            ? "ویرایش اطلاعات کارمند"
+            : "افزودن کارمند جدید"
+        }
         open={modalOpen}
         onCancel={
           handleCloseCreate
@@ -804,7 +1841,9 @@ export default function EmployeesPage() {
               handleCreate
             }
           >
-            ثبت کارمند
+            {editingEmployee
+              ? "ذخیره تغییرات"
+              : "ثبت کارمند"}
           </Button>,
         ]}
       >
@@ -821,17 +1860,8 @@ export default function EmployeesPage() {
             اطلاعات اصلی
           </Title>
 
-          <Row
-            gutter={[
-              16,
-              8,
-            ]}
-          >
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+          <Row gutter={[16, 8]}>
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="کد پرسنلی"
                 name="personnel_code"
@@ -849,11 +1879,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="نام"
                 name="first_name"
@@ -869,11 +1895,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="نام خانوادگی"
                 name="last_name"
@@ -889,11 +1911,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="کد ملی"
                 name="national_id"
@@ -923,11 +1941,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="شماره شناسنامه"
                 name="birth_certificate_number"
@@ -936,11 +1950,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="نام پدر"
                 name="father_name"
@@ -949,11 +1959,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="جنسیت"
                 name="gender"
@@ -973,11 +1979,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="گروه کارکنان"
                 name="employee_group"
@@ -997,11 +1999,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="وضعیت تأهل"
                 name="marital_status"
@@ -1032,17 +2030,8 @@ export default function EmployeesPage() {
             اطلاعات سازمانی
           </Title>
 
-          <Row
-            gutter={[
-              16,
-              8,
-            ]}
-          >
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+          <Row gutter={[16, 8]}>
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="واحد / دپارتمان"
                 name="department"
@@ -1051,11 +2040,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="عنوان شغلی"
                 name="job_title"
@@ -1064,40 +2049,79 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
-                label="شناسه سمت سازمانی"
-                name="position"
-                tooltip="در این مرحله شناسه عددی سمت سازمانی را وارد کنید."
-                rules={[
-                  {
-                    type: "number",
-                    min: 1,
-                    message:
-                      "شناسه سمت سازمانی باید یک عدد معتبر بزرگ‌تر از صفر باشد.",
-                  },
-                ]}
+                label="واحد سازمانی"
+                tooltip="واحد سازمانی محل فعالیت کارمند را انتخاب کنید."
               >
-                <InputNumber
-                  style={{
-                    width: "100%",
-                  }}
-                  min={1}
-                  precision={0}
-                  placeholder="مثلاً 1"
+                <Select
+                  allowClear
+                  showSearch
+                  loading={
+                    organizationLoading
+                  }
+                  placeholder="انتخاب واحد سازمانی"
+                  optionFilterProp="label"
+                  value={
+                    selectedOrganizationUnitId
+                  }
+                  onChange={
+                    handleOrganizationUnitChange
+                  }
+                  options={organizationUnits.map(
+                    (unit) => ({
+                      label: `${unit.name} (${unit.code})`,
+                      value: unit.id,
+                    }),
+                  )}
+                  notFoundContent={
+                    organizationLoading
+                      ? "در حال دریافت..."
+                      : "واحد سازمانی فعالی یافت نشد"
+                  }
                 />
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
+              <Form.Item
+                label="سمت سازمانی"
+                name="position"
+                tooltip="سمت را از میان سمت‌های فعال واحد انتخاب‌شده انتخاب کنید."
+              >
+                <Select
+                  allowClear
+                  showSearch
+                  loading={
+                    positionLoading
+                  }
+                  disabled={
+                    selectedOrganizationUnitId ===
+                    undefined
+                  }
+                  placeholder={
+                    selectedOrganizationUnitId ===
+                    undefined
+                      ? "ابتدا واحد سازمانی را انتخاب کنید"
+                      : "انتخاب سمت سازمانی"
+                  }
+                  optionFilterProp="label"
+                  options={positions.map(
+                    (position) => ({
+                      label: `${position.title} (${position.code})`,
+                      value: position.id,
+                    }),
+                  )}
+                  notFoundContent={
+                    positionLoading
+                      ? "در حال دریافت..."
+                      : "سمت فعالی برای این واحد یافت نشد"
+                  }
+                />
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="شماره بیمه"
                 name="insurance_number"
@@ -1106,11 +2130,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="تاریخ تولد"
                 name="birth_date"
@@ -1131,11 +2151,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="تاریخ شروع به کار"
                 name="start_date"
@@ -1156,11 +2172,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="تاریخ بیمه"
                 name="insurance_date"
@@ -1192,17 +2204,8 @@ export default function EmployeesPage() {
             تحصیلات و نظام وظیفه
           </Title>
 
-          <Row
-            gutter={[
-              16,
-              8,
-            ]}
-          >
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+          <Row gutter={[16, 8]}>
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="آخرین مدرک تحصیلی"
                 name="education_level"
@@ -1211,11 +2214,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="رشته تحصیلی"
                 name="field_of_study"
@@ -1224,11 +2223,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="شماره دانشجویی"
                 name="student_number"
@@ -1237,11 +2232,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="وضعیت نظام وظیفه"
                 name="military_status"
@@ -1255,11 +2246,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="تعداد فرزندان"
                 name="child_count"
@@ -1286,17 +2273,8 @@ export default function EmployeesPage() {
             اطلاعات تماس و سکونت
           </Title>
 
-          <Row
-            gutter={[
-              16,
-              8,
-            ]}
-          >
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+          <Row gutter={[16, 8]}>
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="تلفن ثابت"
                 name="landline_phone"
@@ -1305,11 +2283,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="منطقه سکونت"
                 name="residence_area"
@@ -1318,11 +2292,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              sm={12}
-              md={8}
-            >
+            <Col xs={24} sm={12} md={8}>
               <Form.Item
                 label="وضعیت تردد"
                 name="transportation_status"
@@ -1369,16 +2339,8 @@ export default function EmployeesPage() {
             اطلاعات قرارداد
           </Title>
 
-          <Row
-            gutter={[
-              16,
-              8,
-            ]}
-          >
-            <Col
-              xs={24}
-              md={12}
-            >
+          <Row gutter={[16, 8]}>
+            <Col xs={24} md={12}>
               <Form.Item
                 label="عنوان قرارداد"
                 name="contract_title"
@@ -1387,10 +2349,7 @@ export default function EmployeesPage() {
               </Form.Item>
             </Col>
 
-            <Col
-              xs={24}
-              md={12}
-            >
+            <Col xs={24} md={12}>
               <Form.Item
                 label="سمت درج‌شده در قرارداد"
                 name="contract_position"

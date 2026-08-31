@@ -50,13 +50,11 @@ const menuItems = [
     key: "/organization",
     icon: <ApartmentOutlined />,
     label: "ساختار سازمانی",
-    disabled: true,
   },
   {
     key: "/payroll",
     icon: <DollarOutlined />,
     label: "حقوق و دستمزد",
-    disabled: true,
   },
   {
     key: "/documents",

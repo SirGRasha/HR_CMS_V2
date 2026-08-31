@@ -124,6 +124,56 @@ class EmployeeSalary(models.Model):
             f"{self.year}/{self.month}"
         )
 
+class PayrollBonus(models.Model):
+    salary = models.ForeignKey(
+        EmployeeSalary,
+        on_delete=models.CASCADE,
+        related_name="bonuses",
+        verbose_name="حقوق",
+    )
+
+    title = models.CharField(
+        "عنوان پاداش",
+        max_length=150,
+    )
+
+    amount = models.DecimalField(
+        "مبلغ",
+        max_digits=15,
+        decimal_places=0,
+        validators=[
+            MinValueValidator(0),
+        ],
+        default=0,
+    )
+
+    description = models.CharField(
+        "توضیحات",
+        max_length=255,
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(
+        "تاریخ ثبت",
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        "آخرین بروزرسانی",
+        auto_now=True,
+    )
+
+    class Meta:
+        verbose_name = "پاداش حقوق"
+        verbose_name_plural = "پاداش‌های حقوق"
+        ordering = ["id"]
+
+    def __str__(self):
+        return (
+            f"{self.salary} - "
+            f"{self.title} - "
+            f"{self.amount}"
+        )
 class PayrollDeduction(models.Model):
 
     class DeductionType(models.TextChoices):

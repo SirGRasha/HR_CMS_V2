@@ -495,6 +495,109 @@ class EmployeeAPITest(APITestCase):
             returned_ids,
         )
 
+    def test_normal_user_cannot_create_child_for_other_employee(self):
+        other_user = User.objects.create_user(
+            username="child_create_other_user",
+            password="StrongPassword456",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="EMP-CHILD-CREATE-OTHER",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="فناوری اطلاعات",
+            job_title="کارشناس",
+            national_id="0078901238",
+            marital_status="single",
+            position=self.position,
+            user=other_user,
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.post(
+            "/api/personnel/children/",
+            {
+                "employee": other_employee.id,
+                "name": "فرزند غیرمجاز",
+                "birth_date": "2015-01-01",
+                "education_certificate": False,
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        self.assertFalse(
+            EmployeeChild.objects.filter(
+                name="فرزند غیرمجاز"
+            ).exists()
+        )
+
+    # ==========================================
+    # تست جدید شماره ۲
+    # ==========================================
+
+    def test_normal_user_cannot_reassign_child_to_other_employee(self):
+        other_user = User.objects.create_user(
+            username="child_reassign_other_user",
+            password="StrongPassword456",
+        )
+
+        other_employee = Employee.objects.create(
+            personnel_code="EMP-CHILD-REASSIGN",
+            first_name="کاربر",
+            last_name="دیگر",
+            gender="male",
+            employee_group="administrative",
+            department="فناوری اطلاعات",
+            job_title="کارشناس",
+            national_id="0078901239",
+            marital_status="single",
+            position=self.position,
+            user=other_user,
+        )
+
+        child = EmployeeChild.objects.create(
+            employee=self.employee,
+            name="فرزند قابل انتقال نیست",
+            birth_date=date(2015, 1, 1),
+            education_certificate=False,
+            is_active=True,
+        )
+
+        self.client.force_authenticate(
+            user=self.user
+        )
+
+        response = self.client.patch(
+            f"/api/personnel/children/{child.id}/",
+            {
+                "employee": other_employee.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        child.refresh_from_db()
+
+        self.assertEqual(
+            child.employee_id,
+            self.employee.id,
+        )
+
     def test_normal_user_cannot_access_other_users_phone(self):
         other_user = User.objects.create_user(
             username="phone_other_user",

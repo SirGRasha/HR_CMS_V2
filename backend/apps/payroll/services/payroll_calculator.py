@@ -14,14 +14,21 @@ class PayrollCalculator:
     """
     موتور اصلی محاسبه حقوق و مزایای پرسنل.
 
-    این کلاس مسئول orchestration است و منطق جزئی
-    حق اولاد و کسورات را به سرویس‌های تخصصی واگذار می‌کند.
+    مسئولیت این کلاس:
+    - محاسبه حقوق پایه
+    - محاسبه مزایای ثابت
+    - محاسبه خودکار حق اولاد
+    - محاسبه مجموع پاداش‌ها
+    - محاسبه کسورات
+    - محاسبه حقوق ناخالص
+    - محاسبه حقوق خالص
     """
 
     @staticmethod
     def calculate(employee, salary):
         """
-        محاسبه کامل حقوق، مزایا، کسورات و حقوق خالص.
+        محاسبه کامل حقوق، مزایا، پاداش‌ها،
+        کسورات و حقوق خالص.
         """
 
         monthly_wage = Decimal(
@@ -65,6 +72,17 @@ class PayrollCalculator:
         )
 
         # --------------------------------------------------
+        # Bonuses
+        # --------------------------------------------------
+
+        total_bonuses = Decimal("0")
+
+        for bonus in salary.bonuses.all():
+            total_bonuses += Decimal(
+                str(bonus.amount)
+            )
+
+        # --------------------------------------------------
         # Earnings
         # --------------------------------------------------
 
@@ -74,9 +92,16 @@ class PayrollCalculator:
             + housing_allowance
             + marriage_allowance
             + child_allowance
+            + total_bonuses
         )
 
-        total_eligible_benefits = gross_earnings
+        total_eligible_benefits = (
+            monthly_wage
+            + worker_food_allowance
+            + housing_allowance
+            + marriage_allowance
+            + child_allowance
+        )
 
         # --------------------------------------------------
         # Deductions
@@ -106,29 +131,63 @@ class PayrollCalculator:
 
         return {
             "monthly_wage": monthly_wage,
+
             "worker_food_allowance": (
                 worker_food_allowance
             ),
-            "housing_allowance": housing_allowance,
-            "marriage_allowance": marriage_allowance,
+
+            "housing_allowance": (
+                housing_allowance
+            ),
+
+            "marriage_allowance": (
+                marriage_allowance
+            ),
+
+            # Child
             "daily_wage": daily_wage,
+
             "eligible_children_count": (
                 eligible_children_count
             ),
+
             "child_allowance_per_child": (
                 child_allowance_per_child
             ),
-            "child_allowance": child_allowance,
+
+            "child_allowance": (
+                child_allowance
+            ),
+
+            # Bonuses
+            "total_bonuses": total_bonuses,
+
+            # Earnings
             "total_eligible_benefits": (
                 total_eligible_benefits
             ),
-            "gross_earnings": gross_earnings,
+
+            "gross_earnings": (
+                gross_earnings
+            ),
+
+            # Deductions
             "insurance": deductions["insurance"],
+
             "tax": deductions["tax"],
+
             "advance": deductions["advance"],
+
             "loan": deductions["loan"],
+
             "absence": deductions["absence"],
+
             "other": deductions["other"],
-            "total_deductions": total_deductions,
+
+            "total_deductions": (
+                total_deductions
+            ),
+
+            # Net
             "net_salary": net_salary,
         }
